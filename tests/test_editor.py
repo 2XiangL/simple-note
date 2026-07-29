@@ -30,3 +30,28 @@ def test_each_char_one_style_tag(tk_root):
     assert len(tags0) == 1
     assert len(tags1) == 1
     assert tags0 != tags1
+
+
+def test_insert_inherits_current_style(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed._current_style = {"bold": True}
+    ed.insert("end-1c", "Hi")
+    tags = [t for t in ed.tag_names("1.0") if t in ed._style_tags]
+    assert len(tags) == 1
+    assert ed._style_at("1.0").get("bold") is True
+
+
+def test_insert_no_style_when_current_empty(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert("end-1c", "Hi")
+    tags = [t for t in ed.tag_names("1.0") if t in ed._style_tags]
+    assert tags == []
+
+
+def test_apply_style_no_selection_sets_current_style(tk_root):
+    calls = []
+    ed = editor.RichTextEditor(tk_root)
+    ed.set_on_dirty(lambda: calls.append(1))
+    ed.apply_style_to_selection({"size": 20})
+    assert ed._current_style.get("size") == 20
+    assert calls == [1]
