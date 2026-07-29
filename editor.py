@@ -32,6 +32,9 @@ class RichTextEditor(tk.Text):
     def set_on_dirty(self, callback):
         self._on_dirty = callback
 
+    def set_on_cursor_style(self, callback):
+        self._on_cursor_style = callback
+
     def _mark_dirty(self):
         if self._loading:
             return

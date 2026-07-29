@@ -119,3 +119,14 @@ def test_loading_path_does_not_consume_pending(tk_root):
     ed.apply_style_to_selection({"size": 20})
     ed.insert_plain("x")
     assert ed._pending is True
+
+
+def test_cursor_style_callback_fires_with_current_style(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    captured = []
+    ed.set_on_cursor_style(lambda st: captured.append(st))
+    ed.insert_plain("ab")
+    ed._apply_delta_range("1.0", "1.1", {"bold": True})
+    ed.mark_set("insert", "1.0")
+    ed._on_cursor_move()
+    assert captured and captured[-1].get("bold") is True
