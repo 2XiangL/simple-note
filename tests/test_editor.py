@@ -95,3 +95,20 @@ def test_roundtrip_with_image(tk_root):
     assert ed2.to_document() == doc
     # 重开后源图仍为原始分辨率，证明缩放无损
     assert ed2.image_source(img_id).size == (40, 30)
+
+
+def test_pending_style_survives_cursor_move(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.apply_style_to_selection({"size": 20})   # 无选区 -> pending
+    assert ed._pending is True
+    ed._on_cursor_move()                        # 模拟点击别处
+    assert ed._current_style.get("size") == 20  # pending 保护，未被覆盖
+    assert ed._pending is True
+
+
+def test_pending_cleared_by_insert(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.apply_style_to_selection({"size": 20})
+    ed.insert("end-1c", "H")
+    assert ed._pending is False
+    assert ed._style_at("1.0").get("size") == 20

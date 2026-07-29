@@ -18,6 +18,8 @@ class RichTextEditor(tk.Text):
         self._style_counter = 0
         self._image_counter = 0
         self._current_style = {}
+        self._pending = False
+        self._on_cursor_style = None
         self._loading = False
         self._on_dirty = None
         self._resizer = None
@@ -54,19 +56,24 @@ class RichTextEditor(tk.Text):
         return {}
 
     def _on_cursor_move(self, _event=None):
-        before = self.index("insert -1c")
-        self._current_style = self._style_at(before)
+        if not self._pending:
+            before = self.index("insert -1c")
+            self._current_style = self._style_at(before)
+        if self._on_cursor_style:
+            self._on_cursor_style(dict(self._current_style))
 
     # ---- 文本插入（自动套用当前样式）----
     def insert(self, index, chars, *args):
         start = self.index(index)
         super().insert(index, chars, *args)
-        if self._loading or not self._current_style:
+        if self._loading:
             self._mark_dirty()
             return
-        tag = self._get_or_create_tag(self._current_style)
-        end = self.index("%s +%dc" % (start, len(chars)))
-        self.tag_add(tag, start, end)
+        if self._current_style:
+            tag = self._get_or_create_tag(self._current_style)
+            end = self.index("%s +%dc" % (start, len(chars)))
+            self.tag_add(tag, start, end)
+        self._pending = False
         self._mark_dirty()
 
     def insert_plain(self, text):
@@ -88,6 +95,7 @@ class RichTextEditor(tk.Text):
             self._apply_delta_range(self.index("sel.first"), self.index("sel.last"), delta)
         else:
             self._current_style = util.merge_style(self._current_style, delta)
+            self._pending = True
             self._mark_dirty()
 
     def _apply_delta_range(self, start, end, delta):
