@@ -109,9 +109,23 @@ class NoteApp:
             messagebox.showerror("打开失败", "无法打开该文件：%s" % exc)
             return
         title = os.path.basename(path)
-        doc = self._make_doc(path=path, title=title, document=document, blobs=blobs)
+        try:
+            doc = self._make_doc(path=path, title=title, document=document, blobs=blobs)
+        except Exception as exc:
+            messagebox.showerror("打开失败", "解析笔记内容失败：%s" % exc)
+            return
         doc.dirty = False
         self.add_doc(doc)
+
+    def _write_to(self, doc, path):
+        try:
+            document = doc.editor.to_document()
+            blobs = doc.editor.get_image_blobs()
+            snote.save_document(path, document, blobs)
+            return True
+        except OSError as exc:
+            messagebox.showerror("保存失败", "写入失败：%s" % exc)
+            return False
 
     def save(self, doc):
         if doc is None:
@@ -119,15 +133,9 @@ class NoteApp:
         if not doc.path:
             self.save_as(doc)
             return
-        try:
-            document = doc.editor.to_document()
-            blobs = doc.editor.get_image_blobs()
-            snote.save_document(doc.path, document, blobs)
-        except OSError as exc:
-            messagebox.showerror("保存失败", "写入失败：%s" % exc)
-            return
-        doc.dirty = False
-        self.panel.refresh(doc)
+        if self._write_to(doc, doc.path):
+            doc.dirty = False
+            self.panel.refresh(doc)
 
     def save_as(self, doc):
         if doc is None:
@@ -137,9 +145,11 @@ class NoteApp:
         )
         if not path:
             return
-        doc.path = path
-        doc.title = os.path.basename(path)
-        self.save(doc)
+        if self._write_to(doc, path):
+            doc.path = path
+            doc.title = os.path.basename(path)
+            doc.dirty = False
+            self.panel.refresh(doc)
 
     def close_doc(self, doc):
         if doc is None:

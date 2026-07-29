@@ -44,7 +44,11 @@ class ImageResizer:
         self.canvas.bind("<ButtonRelease-1>", self._on_release)
         self.canvas.bind("<Return>", lambda e: self._confirm())
         self.canvas.bind("<Escape>", lambda e: self._cancel())
-        self._cfg_cbid = editor.bind("<Configure>", self._on_editor_changed, add="+")
+        self._binds = []
+        for seq in ("<Configure>", "<MouseWheel>", "<Up>", "<Down>", "<Prior>", "<Next>"):
+            cbid = editor.bind(seq, self._on_editor_changed, add="+")
+            self._binds.append((seq, cbid))
+        self.canvas.bind("<FocusOut>", lambda e: self._confirm())
 
     def _live_size(self):
         return self.editor.image_display_size(self.img_id) or (self.orig_w, self.orig_h)
@@ -131,8 +135,9 @@ class ImageResizer:
         self.editor.end_resize()
 
     def destroy(self):
-        try:
-            self.editor.unbind("<Configure>", self._cfg_cbid)
-        except Exception:
-            pass
+        for seq, cbid in self._binds:
+            try:
+                self.editor.unbind(seq, cbid)
+            except Exception:
+                pass
         self.win.destroy()

@@ -162,11 +162,21 @@ class RichTextEditor(tk.Text):
 
         max_i = 0
         for img_id, meta in document.get("images", {}).items():
+            w = meta.get("width")
+            h = meta.get("height")
             data = image_blobs.get(img_id)
-            if data is None:
-                continue
-            source = PILImage.open(io.BytesIO(data)).convert("RGBA")
-            w, h = meta["width"], meta["height"]
+            source = None
+            if data is not None and w is not None and h is not None:
+                try:
+                    source = PILImage.open(io.BytesIO(data)).convert("RGBA")
+                except Exception:
+                    source = None
+            if source is None:
+                # 缺图/损坏/缺字段：占位符 + 警告（spec §10）
+                print("warning: image %s missing or unreadable; using placeholder" % img_id)
+                source = self._placeholder_source()
+                if w is None or h is None:
+                    w, h = source.size
             photo = self._make_photo(source, w, h)
             self._images[img_id] = {"source": source, "photo": photo, "width": w, "height": h}
             num = img_id[3:] if img_id.startswith("img") and img_id[3:].isdigit() else "0"
@@ -198,6 +208,10 @@ class RichTextEditor(tk.Text):
         self._current_style = {}
 
     # ---- 图片 ----
+    def _placeholder_source(self):
+        from PIL import Image as PILImage
+        return PILImage.new("RGB", (64, 64), (220, 220, 220))
+
     def _make_photo(self, source, width, height):
         from PIL import Image as PILImage, ImageTk
         resized = source.resize((int(width), int(height)), PILImage.LANCZOS)
@@ -251,6 +265,7 @@ class RichTextEditor(tk.Text):
             return
         max_width = max(64, self.winfo_width() - 12)
         self.insert_image(img, max_width=max_width)
+        return "break"
 
     def _on_double_click(self, event):
         idx = self.index("@%d,%d" % (event.x, event.y))
