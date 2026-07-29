@@ -97,16 +97,21 @@ def delete_image(self, img_id):
 
 ```python
 class TrayController:
-    def __init__(self, root, on_quit):  # on_quit = 真正退出应用
+    def __init__(self, root, on_quit, on_hide):  # on_quit=真正退出；on_hide=隐藏前回调（关缩放浮层）
         self._root = root
         self._on_quit = on_quit
+        self._on_hide = on_hide
         self._hidden = False
         self._icon = None        # pystray.Icon，start() 后赋值
         self._hotkey_unreg = None
 
     def start(self):
+        # try/except 包裹：托盘/热键不可用不应阻断应用；失败时 _icon 保持 None
         # keyboard.add_hotkey('ctrl+alt+n', self._on_hotkey)，保存返回的卸载句柄
-        # 构造 pystray.Icon（菜单：显示/隐藏、分隔、退出），icon.run(detach=True) 在守护线程
+        # 构造 pystray.Icon（菜单：显示/隐藏、退出），icon.run_detached() 在守护线程
+
+    def is_running(self):
+        # return self._icon is not None —— 供 app 判断是否可用托盘
 
     def stop(self):
         # 卸载热键；icon.stop()（join 守护线程）
@@ -114,7 +119,7 @@ class TrayController:
     # 仅主线程调用：
     def toggle_visibility(self):  # hide ↔ show 状态机
     def hide(self):
-        # 调 active editor.end_resize() 关掉可能打开的缩放浮层；root.withdraw()
+        # 先调 on_hide()（关掉可能打开的缩放浮层），再 root.withdraw()
     def show(self):
         # root.deiconify() + lift() + focus_force()
 ```
@@ -123,9 +128,11 @@ class TrayController:
 
 ### 4.4 `app.py` 接线
 
-- `NoteApp.__init__` 末尾：`self.tray = TrayController(self.root, on_quit=self._real_quit); self.tray.start()`。
-- `WM_DELETE_WINDOW` 协议从 `on_exit` 改为 `self.tray.hide`（点 X = 最小化到托盘）。
+- `NoteApp.__init__` 末尾：`self.tray = TrayController(self.root, on_quit=self._real_quit, on_hide=lambda: self.active is not None and self.active.editor.end_resize()); self.tray.start()`。
+- `WM_DELETE_WINDOW` 协议绑定到 `_on_close`：托盘在跑则 `tray.hide()`（点 X = 最小化到托盘）；托盘未启动（启动失败）则回退到 `_real_quit()`，避免隐藏后无法恢复。
+- 菜单"退出"→ `_real_quit`。
 - 新增 `_real_quit`：先 `self.tray.stop()`，再执行原 `on_exit` 主体（脏文档询问 + `root.destroy`）。原 `on_exit` 重命名为 `_real_quit` 的内核，保留所有现有逻辑。
+- `switch_to` 在 `set_editor` 后调 `editor._on_cursor_move()`，让字号框在切文档时立即刷新到新文档当前位置。
 
 ### 4.5 托盘图标
 
@@ -133,7 +140,7 @@ class TrayController:
 
 ### 4.6 依赖
 
-`pyproject.toml` 的 `dependencies` 追加 `pystray>=5.0` 与 `keyboard>=0.13`。`uv.lock` 由 `uv` 同步。
+`pyproject.toml` 的 `dependencies` 追加 `pystray>=0.19` 与 `keyboard>=0.13`。`uv.lock` 由 `uv` 同步。
 
 ### 4.7 main.py
 

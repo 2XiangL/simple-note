@@ -378,7 +378,7 @@ git commit -m "feat: delete image with Del key from resize overlay"
 ```toml
 dependencies = [
     "pillow>=12.3.0",
-    "pystray>=5.0",
+    "pystray>=0.19",
     "keyboard>=0.13",
 ]
 ```
