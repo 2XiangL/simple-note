@@ -146,10 +146,8 @@ class NoteApp:
             return
         if doc.dirty and not self._confirm_save(doc):
             return
-        if doc.editor is not None:
-            if doc.editor._resizer is not None:
-                doc.editor.end_resize()
-            doc.editor.destroy()
+        doc.editor.end_resize()
+        doc.editor.destroy()
         idx = self.docs.index(doc)
         self.docs.remove(doc)
         self.panel.remove(doc)
@@ -165,9 +163,8 @@ class NoteApp:
             return
         if self.active is doc:
             return
-        if self.active is not None and self.active.editor is not None:
-            if self.active.editor._resizer is not None:
-                self.active.editor.end_resize()
+        if self.active is not None:
+            self.active.editor.end_resize()
             self.active.editor.pack_forget()
         self.active = doc
         doc.editor.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -190,6 +187,7 @@ class NoteApp:
             return False
         if ans:
             self.save(doc)
+            return not doc.dirty
         return True
 
     def on_exit(self):
