@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 
 import snote
 from editor import RichTextEditor
+from tray import TrayController
 from notes_panel import NotesPanel
 from toolbar import FormatToolbar
 
@@ -56,8 +57,14 @@ class NoteApp:
         self.editor_host = tk.Frame(self.body)
         self.body.add(self.editor_host, minsize=300)
 
-        self.root.protocol("WM_DELETE_WINDOW", self.on_exit)
         self.new_doc()
+        self.tray = TrayController(
+            self.root,
+            on_quit=self._real_quit,
+            on_hide=lambda: self.active is not None and self.active.editor.end_resize(),
+        )
+        self.tray.start()
+        self.root.protocol("WM_DELETE_WINDOW", self.tray.hide)
 
     # ---- 菜单 ----
     def _build_menu(self):
@@ -69,7 +76,7 @@ class NoteApp:
         file_menu.add_command(label="保存", command=lambda: self.save(self.active), accelerator="Ctrl+S")
         file_menu.add_command(label="另存为", command=lambda: self.save_as(self.active))
         file_menu.add_separator()
-        file_menu.add_command(label="退出", command=self.on_exit)
+        file_menu.add_command(label="退出", command=self._real_quit)
         menubar.add_cascade(label="文件", menu=file_menu)
 
         help_menu = tk.Menu(menubar, tearoff=0)
@@ -200,12 +207,13 @@ class NoteApp:
             return not doc.dirty
         return True
 
-    def on_exit(self):
+    def _real_quit(self):
         for doc in list(self.docs):
             if doc.dirty:
                 self.switch_to(doc)
                 if not self._confirm_save(doc):
                     return
+        self.tray.stop()
         self.root.destroy()
 
     def about(self):
