@@ -3,6 +3,8 @@
 import tkinter as tk
 from tkinter import colorchooser, ttk
 
+import util
+
 
 class FormatToolbar(ttk.Frame):
     def __init__(self, master=None):
@@ -31,6 +33,14 @@ class FormatToolbar(ttk.Frame):
 
     def set_editor(self, editor):
         self.editor = editor
+        editor.set_on_cursor_style(self._refresh_size)
+
+    def _refresh_size(self, style):
+        # 字号框正在被用户编辑时不覆盖，避免打架
+        if self.focus_get() is self.size_box:
+            return
+        size = style.get("size", util.DEFAULT_SIZE)
+        self.size_var.set(str(size))
 
     def on_color(self):
         if not self.editor:
