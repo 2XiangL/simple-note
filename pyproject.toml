@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "pillow>=12.3.0",
+    "pystray>=0.19",
+    "keyboard>=0.13",
 ]
 
 [dependency-groups]
