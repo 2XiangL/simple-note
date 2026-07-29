@@ -80,6 +80,7 @@ def test_roundtrip_preserves_styles_dict(tk_root):
 
 def test_roundtrip_with_image(tk_root):
     from PIL import Image as PILImage
+    import io
     ed = editor.RichTextEditor(tk_root)
     ed.insert_plain("ab")
     img = PILImage.new("RGBA", (40, 30), (255, 0, 0, 255))
@@ -87,6 +88,10 @@ def test_roundtrip_with_image(tk_root):
     doc = ed.to_document()
     blobs = ed.get_image_blobs()
     assert img_id in blobs
+    # 源图(40x30)被完整保存，而非缩放后的显示图(20x15)
+    assert PILImage.open(io.BytesIO(blobs[img_id])).size == (40, 30)
     ed2 = editor.RichTextEditor(tk_root)
     ed2.from_document(doc, blobs)
     assert ed2.to_document() == doc
+    # 重开后源图仍为原始分辨率，证明缩放无损
+    assert ed2.image_source(img_id).size == (40, 30)

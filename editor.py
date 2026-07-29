@@ -128,8 +128,11 @@ class RichTextEditor(tk.Text):
 
     def get_image_blobs(self):
         import io
+        used = {value for kind, value, _index in self.dump("1.0", "end", image=True, text=False, tag=False) if kind == "image"}
         blobs = {}
         for img_id, m in self._images.items():
+            if img_id not in used:
+                continue
             buf = io.BytesIO()
             m["source"].save(buf, format="PNG")
             blobs[img_id] = buf.getvalue()
