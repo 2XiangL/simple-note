@@ -44,6 +44,8 @@ class ImageResizer:
         self.canvas.bind("<ButtonRelease-1>", self._on_release)
         self.canvas.bind("<Return>", lambda e: self._confirm())
         self.canvas.bind("<Escape>", lambda e: self._cancel())
+        self.canvas.bind("<Delete>", lambda e: self._delete())
+        self.canvas.bind("<Backspace>", lambda e: self._delete())
         self._binds = []
         for seq in ("<Configure>", "<MouseWheel>", "<Up>", "<Down>", "<Prior>", "<Next>"):
             cbid = editor.bind(seq, self._on_editor_changed, add="+")
@@ -132,6 +134,10 @@ class ImageResizer:
 
     def _cancel(self):
         self.editor.set_image_size(self.img_id, int(self.orig_w), int(self.orig_h))
+        self.editor.end_resize()
+
+    def _delete(self):
+        self.editor.delete_image(self.img_id)
         self.editor.end_resize()
 
     def destroy(self):
