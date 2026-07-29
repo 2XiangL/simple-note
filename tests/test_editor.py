@@ -76,3 +76,17 @@ def test_roundtrip_preserves_styles_dict(tk_root):
     doc = ed.to_document()
     assert "s1" in doc["styles"] and doc["styles"]["s1"] == {"bold": True}
     assert "s2" in doc["styles"] and doc["styles"]["s2"] == {"italic": True}
+
+
+def test_roundtrip_with_image(tk_root):
+    from PIL import Image as PILImage
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    img = PILImage.new("RGBA", (40, 30), (255, 0, 0, 255))
+    img_id = ed.insert_image(img, max_width=20)
+    doc = ed.to_document()
+    blobs = ed.get_image_blobs()
+    assert img_id in blobs
+    ed2 = editor.RichTextEditor(tk_root)
+    ed2.from_document(doc, blobs)
+    assert ed2.to_document() == doc

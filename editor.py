@@ -23,6 +23,8 @@ class RichTextEditor(tk.Text):
         self._resizer = None
         self.bind("<KeyRelease>", self._on_cursor_move, add="+")
         self.bind("<ButtonRelease-1>", self._on_cursor_move, add="+")
+        self.bind("<Control-v>", self._on_paste, add="+")
+        self.bind("<Double-Button-1>", self._on_double_click, add="+")
 
     # ---- dirty 回调 ----
     def set_on_dirty(self, callback):
@@ -116,9 +118,10 @@ class RichTextEditor(tk.Text):
                 ops.append({"k": "image", "id": value})
         used = {op["name"] for op in ops if op["k"] == "tagon"}
         styles = {k: dict(v) for k, v in self._style_tags.items() if k in used}
+        used_imgs = {op["id"] for op in ops if op["k"] == "image"}
         images = {
             img_id: {"file": "images/%s.png" % img_id, "width": m["width"], "height": m["height"]}
-            for img_id, m in self._images.items()
+            for img_id, m in self._images.items() if img_id in used_imgs
         }
         import snote
         return snote.build_document(styles, ops, images)
@@ -134,7 +137,7 @@ class RichTextEditor(tk.Text):
 
     def from_document(self, document, image_blobs):
         import io
-        from PIL import Image as PILImage, ImageTk
+        from PIL import Image as PILImage
 
         self._loading = True
         try:
@@ -190,3 +193,83 @@ class RichTextEditor(tk.Text):
         finally:
             self._loading = False
         self._current_style = {}
+
+    # ---- 图片 ----
+    def _make_photo(self, source, width, height):
+        from PIL import Image as PILImage, ImageTk
+        resized = source.resize((int(width), int(height)), PILImage.LANCZOS)
+        return ImageTk.PhotoImage(resized)
+
+    def insert_image(self, pil_image, max_width=None):
+        source = pil_image.copy()
+        width, height = source.size
+        if max_width and width > max_width:
+            height = int(height * (max_width / width))
+            width = max_width
+        self._image_counter += 1
+        img_id = "img%d" % self._image_counter
+        photo = self._make_photo(source, width, height)
+        self._images[img_id] = {"source": source, "photo": photo, "width": width, "height": height}
+        self.image_create("insert", name=img_id, image=photo)
+        self._mark_dirty()
+        return img_id
+
+    def _index_of_image(self, img_id):
+        for kind, value, index in self.dump("1.0", "end", image=True, text=False, tag=False):
+            if kind == "image" and value == img_id:
+                return index
+        return None
+
+    def set_image_size(self, img_id, width, height):
+        meta = self._images.get(img_id)
+        if not meta:
+            return
+        meta["photo"] = self._make_photo(meta["source"], width, height)
+        meta["width"], meta["height"] = int(width), int(height)
+        idx = self._index_of_image(img_id)
+        if idx is not None:
+            self.image_configure(idx, image=meta["photo"])
+        self._mark_dirty()
+
+    def image_display_size(self, img_id):
+        meta = self._images.get(img_id)
+        if not meta:
+            return None
+        return meta["width"], meta["height"]
+
+    def image_source(self, img_id):
+        meta = self._images.get(img_id)
+        return meta["source"] if meta else None
+
+    # ---- 事件 ----
+    def _on_paste(self, _event=None):
+        img = util.get_clipboard_image()
+        if img is None:
+            return
+        max_width = max(64, self.winfo_width() - 12)
+        self.insert_image(img, max_width=max_width)
+
+    def _on_double_click(self, event):
+        idx = self.index("@%d,%d" % (event.x, event.y))
+        for kind, value, index in self.dump("1.0", "end", image=True, text=False, tag=False):
+            if kind == "image" and self.compare(index, "==", idx):
+                self.begin_resize(value)
+                return "break"
+
+    def begin_resize(self, img_id):
+        if self._resizer is not None:
+            self._resizer.destroy()
+            self._resizer = None
+        idx = self._index_of_image(img_id)
+        if idx is None:
+            return
+        bbox = self.bbox(idx)
+        if not bbox:
+            return
+        from image_resizer import ImageResizer
+        self._resizer = ImageResizer(self, img_id, bbox)
+
+    def end_resize(self):
+        if self._resizer is not None:
+            self._resizer.destroy()
+            self._resizer = None
