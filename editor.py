@@ -19,10 +19,12 @@ class RichTextEditor(tk.Text):
         self._image_counter = 0
         self._current_style = {}
         self._pending = False
+        self._type_start = None
         self._on_cursor_style = None
         self._loading = False
         self._on_dirty = None
         self._resizer = None
+        self.bind("<KeyPress>", self._on_key_press, add="+")
         self.bind("<KeyRelease>", self._on_cursor_move, add="+")
         self.bind("<ButtonRelease-1>", self._on_cursor_move, add="+")
         self.bind("<Control-v>", self._on_paste, add="+")
@@ -58,7 +60,25 @@ class RichTextEditor(tk.Text):
                 return dict(self._style_tags[tag])
         return {}
 
+    def _on_key_press(self, event):
+        # 默认 <KeyPress> 类绑定走 Tcl 层 insert，绕过下面的 Python insert()。
+        # 这里在打字前记录光标，KeyRelease 时把当前样式套到刚输入的范围。
+        if event.char and not (event.state & 0x4):
+            self._type_start = self.index("insert")
+        else:
+            self._type_start = None
+
     def _on_cursor_move(self, _event=None):
+        if self._type_start is not None:
+            start = self._type_start
+            self._type_start = None
+            now = self.index("insert")
+            if self.compare(now, ">", start):
+                if self._current_style:
+                    tag = self._get_or_create_tag(self._current_style)
+                    self.tag_add(tag, start, now)
+                self._pending = False
+                self._mark_dirty()
         if not self._pending:
             before = self.index("insert -1c")
             self._current_style = self._style_at(before)

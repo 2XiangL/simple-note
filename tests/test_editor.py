@@ -159,3 +159,34 @@ def test_delete_image_removes_from_text_and_registry(tk_root):
     assert img_id not in ed._images
     segs = ed.dump("1.0", "end", image=True, text=False, tag=False)
     assert not any(k == "image" for k, _v, _i in segs)
+
+
+class _FakeKey:
+    def __init__(self, char, state=0):
+        self.char = char
+        self.state = state
+
+
+def test_typed_text_receives_pending_style(tk_root):
+    # 真实打字走默认 <KeyPress> 类绑定 -> Tcl 层 insert，绕过 Python insert 重写。
+    # 模拟该路径：KeyPress 记录起点 -> Tcl 层 insert 插字 -> KeyRelease 套样式。
+    ed = editor.RichTextEditor(tk_root)
+    ed.apply_style_to_selection({"size": 20})   # 无选区 -> pending
+    assert ed._pending is True
+    start = ed.index("insert")
+    ed._on_key_press(_FakeKey("z"))             # 记录打字前光标
+    ed.tk.call(ed._w, "insert", "insert", "z")  # 默认绑定的 C 层 insert
+    ed._on_cursor_move()                        # KeyRelease 把 pending 套到刚输入的字
+    assert ed._style_at(start).get("size") == 20
+    assert ed._pending is False
+
+
+def test_typed_text_with_empty_style_adds_no_tag(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    ed.mark_set("insert", "end-1c")
+    ed._on_key_press(_FakeKey("c"))
+    ed.tk.call(ed._w, "insert", "insert", "c")
+    ed._on_cursor_move()
+    tags = [t for t in ed.tag_names("1.2") if t in ed._style_tags]
+    assert tags == []
