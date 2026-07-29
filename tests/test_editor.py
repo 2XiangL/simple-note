@@ -146,3 +146,16 @@ def test_toolbar_size_box_refreshes_on_cursor_move(tk_root):
     ed.mark_set("insert", "1.4")
     ed._on_cursor_move()
     assert tb.size_var.get() == str(util.DEFAULT_SIZE)
+
+
+def test_delete_image_removes_from_text_and_registry(tk_root):
+    from PIL import Image as PILImage
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    img = PILImage.new("RGBA", (20, 20), (0, 0, 0, 255))
+    img_id = ed.insert_image(img)
+    assert img_id in ed._images
+    ed.delete_image(img_id)
+    assert img_id not in ed._images
+    segs = ed.dump("1.0", "end", image=True, text=False, tag=False)
+    assert not any(k == "image" for k, _v, _i in segs)

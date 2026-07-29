@@ -270,6 +270,14 @@ class RichTextEditor(tk.Text):
         meta = self._images.get(img_id)
         return meta["source"] if meta else None
 
+    def delete_image(self, img_id):
+        idx = self._index_of_image(img_id)
+        if idx is None:
+            return
+        self.delete(idx)
+        self._images.pop(img_id, None)
+        self._mark_dirty()
+
     # ---- 事件 ----
     def _on_paste(self, _event=None):
         img = util.get_clipboard_image()
