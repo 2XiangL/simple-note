@@ -214,6 +214,7 @@ class RichTextEditor(tk.Text):
         finally:
             self._loading = False
         self._current_style = {}
+        self._pending = False
 
     # ---- 图片 ----
     def _placeholder_source(self):

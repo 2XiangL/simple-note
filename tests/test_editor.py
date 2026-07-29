@@ -112,3 +112,10 @@ def test_pending_cleared_by_insert(tk_root):
     ed.insert("end-1c", "H")
     assert ed._pending is False
     assert ed._style_at("1.0").get("size") == 20
+
+
+def test_loading_path_does_not_consume_pending(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.apply_style_to_selection({"size": 20})
+    ed.insert_plain("x")
+    assert ed._pending is True
