@@ -139,10 +139,10 @@ def test_toolbar_size_box_refreshes_on_cursor_move(tk_root):
     tb = toolbar.FormatToolbar(tk_root)
     tb.set_editor(ed)
     ed.insert_plain("hello")
-    ed._apply_delta_range("1.0", "1.2", {"size": 20})  # "he" = 20pt
+    ed._apply_delta_range("1.0", "1.2", {"size": 20})
     ed.mark_set("insert", "1.1")
     ed._on_cursor_move()
     assert tb.size_var.get() == "20"
-    ed.mark_set("insert", "1.4")                        # 默认字号区
+    ed.mark_set("insert", "1.4")
     ed._on_cursor_move()
     assert tb.size_var.get() == str(util.DEFAULT_SIZE)
