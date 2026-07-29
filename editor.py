@@ -101,3 +101,92 @@ class RichTextEditor(tk.Text):
             idx = self.index("%s +1c" % idx)
         self._on_cursor_move()
         self._mark_dirty()
+
+    # ---- 序列化 ----
+    def to_document(self):
+        ops = []
+        for kind, value, _index in self.dump("1.0", "end-1c", text=True, tag=True, image=True, mark=False, window=False):
+            if kind == "text":
+                ops.append({"k": "text", "text": value})
+            elif kind == "tagon" and value in self._style_tags:
+                ops.append({"k": "tagon", "name": value})
+            elif kind == "tagoff" and value in self._style_tags:
+                ops.append({"k": "tagoff", "name": value})
+            elif kind == "image" and value in self._images:
+                ops.append({"k": "image", "id": value})
+        used = {op["name"] for op in ops if op["k"] == "tagon"}
+        styles = {k: dict(v) for k, v in self._style_tags.items() if k in used}
+        images = {
+            img_id: {"file": "images/%s.png" % img_id, "width": m["width"], "height": m["height"]}
+            for img_id, m in self._images.items()
+        }
+        import snote
+        return snote.build_document(styles, ops, images)
+
+    def get_image_blobs(self):
+        import io
+        blobs = {}
+        for img_id, m in self._images.items():
+            buf = io.BytesIO()
+            m["source"].save(buf, format="PNG")
+            blobs[img_id] = buf.getvalue()
+        return blobs
+
+    def from_document(self, document, image_blobs):
+        import io
+        from PIL import Image as PILImage, ImageTk
+
+        self._loading = True
+        try:
+            self.delete("1.0", "end")
+        finally:
+            self._loading = False
+        self._style_tags.clear()
+        self._images.clear()
+        self._style_counter = 0
+        self._image_counter = 0
+
+        max_s = 0
+        for tag, style in document.get("styles", {}).items():
+            self._style_tags[tag] = dict(style)
+            self.tag_configure(tag, **util.style_to_tag_config(style, self.family, self.base_size))
+            num = tag[1:] if tag.startswith("s") and tag[1:].isdigit() else "0"
+            max_s = max(max_s, int(num))
+        self._style_counter = max_s
+
+        max_i = 0
+        for img_id, meta in document.get("images", {}).items():
+            data = image_blobs.get(img_id)
+            if data is None:
+                continue
+            source = PILImage.open(io.BytesIO(data)).convert("RGBA")
+            w, h = meta["width"], meta["height"]
+            photo = self._make_photo(source, w, h)
+            self._images[img_id] = {"source": source, "photo": photo, "width": w, "height": h}
+            num = img_id[3:] if img_id.startswith("img") and img_id[3:].isdigit() else "0"
+            max_i = max(max_i, int(num))
+        self._image_counter = max_i
+
+        self._loading = True
+        try:
+            active = set()
+            for op in document.get("ops", []):
+                k = op["k"]
+                if k == "tagon":
+                    active.add(op["name"])
+                elif k == "tagoff":
+                    active.discard(op["name"])
+                elif k == "text":
+                    start = self.index("end-1c")
+                    super().insert("end-1c", op["text"])
+                    end = self.index("end-1c")
+                    for t in active:
+                        if t in self._style_tags:
+                            self.tag_add(t, start, end)
+                elif k == "image":
+                    img_id = op["id"]
+                    if img_id in self._images:
+                        self.image_create("end-1c", name=img_id, image=self._images[img_id]["photo"])
+        finally:
+            self._loading = False
+        self._current_style = {}

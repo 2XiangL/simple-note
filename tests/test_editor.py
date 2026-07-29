@@ -55,3 +55,24 @@ def test_apply_style_no_selection_sets_current_style(tk_root):
     ed.apply_style_to_selection({"size": 20})
     assert ed._current_style.get("size") == 20
     assert calls == [1]
+
+
+def test_roundtrip_text_and_styles(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("Hello")
+    ed._apply_delta_range("1.0", "1.5", {"bold": True, "size": 20})
+    ed._apply_delta_range("1.0", "1.2", {"fg": "#ff0000"})
+    doc = ed.to_document()
+    ed2 = editor.RichTextEditor(tk_root)
+    ed2.from_document(doc, {})
+    assert ed2.to_document() == doc
+
+
+def test_roundtrip_preserves_styles_dict(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    ed._apply_delta_range("1.0", "1.1", {"bold": True})
+    ed._apply_delta_range("1.1", "1.2", {"italic": True})
+    doc = ed.to_document()
+    assert "s1" in doc["styles"] and doc["styles"]["s1"] == {"bold": True}
+    assert "s2" in doc["styles"] and doc["styles"]["s2"] == {"italic": True}
