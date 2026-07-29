@@ -64,7 +64,7 @@ class NoteApp:
             on_hide=lambda: self.active is not None and self.active.editor.end_resize(),
         )
         self.tray.start()
-        self.root.protocol("WM_DELETE_WINDOW", self.tray.hide)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ---- 菜单 ----
     def _build_menu(self):
@@ -187,6 +187,7 @@ class NoteApp:
         doc.editor.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         doc.editor.focus_set()
         self.toolbar.set_editor(doc.editor)
+        doc.editor._on_cursor_move()
         self.panel.select(doc)
 
     def _on_dirty(self, doc):
@@ -206,6 +207,12 @@ class NoteApp:
             self.save(doc)
             return not doc.dirty
         return True
+
+    def _on_close(self):
+        if self.tray.is_running():
+            self.tray.hide()
+        else:
+            self._real_quit()
 
     def _real_quit(self):
         for doc in list(self.docs):

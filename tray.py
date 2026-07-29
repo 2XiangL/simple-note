@@ -35,6 +35,9 @@ class TrayController:
         except Exception as exc:     # 托盘不可用不应阻断应用
             print("warning: tray unavailable: %s" % exc)
 
+    def is_running(self):
+        return self._icon is not None
+
     def _start_impl(self):
         import pystray
         from pystray import MenuItem
