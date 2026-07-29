@@ -1,10 +1,27 @@
 """TrayController：系统托盘 + 全局热键 Ctrl+Alt+N。
 
-pystray 菜单与 keyboard 热键回调跑在各自线程；Tkinter 非线程安全，
-所有外部线程回调一律经 root.after(0, fn) 派发回主线程。
+全局热键通过 Win32 ``RegisterHotKey`` 以系统级方式注册（由 OS 直接投递
+``WM_HOTKEY``），比低级键盘钩子（``SetWindowsHookEx``，``keyboard`` 库所用）
+可靠得多——后者在受限会话或部分机器上会静默安装失败。热键监听在独立线程
+中跑消息泵。
+
+pystray 菜单与热键回调都跑在各自线程；Tkinter 非线程安全，这里采用
+"队列 + 主线程轮询"：外部线程只往队列里塞任务，绝不直接调用 Tk；主线程
+通过 ``root.after`` 周期性 ``_drain`` 队列并在自身上下文执行，彻底规避
+跨线程访问 Tk 的隐患。
 """
 
+import queue
+import threading
 from PIL import Image, ImageDraw, ImageFont
+
+# Win32 热键相关常量
+_MOD_ALT = 0x0001
+_MOD_CONTROL = 0x0002
+_WM_HOTKEY = 0x0312
+_WM_QUIT = 0x0012
+_HOTKEY_ID = 1
+_VK_N = 0x4E
 
 
 def make_icon_image():
@@ -20,6 +37,80 @@ def make_icon_image():
     return img
 
 
+class _HotkeyListener(threading.Thread):
+    """在独立线程注册系统级全局热键并泵取窗口消息。
+
+    命中热键时调用 ``on_triggered``（仍在本监听线程内执行）。
+    仅 Windows 可用；非 Windows 平台 ``run`` 会标记注册失败后退出。
+    """
+
+    daemon = True
+
+    def __init__(self, modifiers, vk, on_triggered):
+        super().__init__()
+        self._modifiers = modifiers
+        self._vk = vk
+        self._on_triggered = on_triggered
+        self._thread_id = 0
+        self._ready = threading.Event()
+        self._registered = False
+        self._error = 0
+
+    def run(self):
+        import ctypes
+        from ctypes import wintypes
+
+        try:
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        except (AttributeError, OSError):
+            self._ready.set()
+            return
+
+        user32.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int,
+                                          wintypes.UINT, wintypes.UINT]
+        user32.RegisterHotKey.restype = wintypes.BOOL
+        user32.UnregisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.UnregisterHotKey.restype = wintypes.BOOL
+        user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG),
+                                       wintypes.HWND, wintypes.UINT, wintypes.UINT]
+        user32.GetMessageW.restype = ctypes.c_int
+
+        self._thread_id = kernel32.GetCurrentThreadId()
+        ok = bool(user32.RegisterHotKey(None, _HOTKEY_ID, self._modifiers, self._vk))
+        self._registered = ok
+        self._error = ctypes.get_last_error() if not ok else 0
+        self._ready.set()
+        if not ok:
+            return
+
+        msg = wintypes.MSG()
+        try:
+            while True:
+                # GetMessage 阻塞至有消息；返回 -1 出错、0 收到 WM_QUIT、正数为普通消息
+                ret = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
+                if ret <= 0:
+                    break
+                if msg.message == _WM_HOTKEY:
+                    self._on_triggered()
+        finally:
+            user32.UnregisterHotKey(None, _HOTKEY_ID)
+
+    def stop(self):
+        """唤醒监听线程使其退出（投递 WM_QUIT 打断 GetMessage）。"""
+        if not self._ready.wait(timeout=2):
+            return
+        if not self._registered or self._thread_id == 0:
+            return
+        try:
+            import ctypes
+            ctypes.windll.user32.PostThreadMessageW(
+                self._thread_id, _WM_QUIT, 0, 0)
+        except Exception:
+            pass
+        self.join(timeout=2)
+
+
 class TrayController:
     def __init__(self, root, on_quit, on_hide):
         self._root = root
@@ -27,9 +118,14 @@ class TrayController:
         self._on_hide = on_hide
         self._hidden = False
         self._icon = None
-        self._hotkey_unreg = None
+        self._hotkey = None
+        self._calls = queue.Queue()
+        self._polling = False
 
     def start(self):
+        # 先启动主线程轮询，确保外部线程入队的任务能被消费
+        self._polling = True
+        self._root.after(50, self._poll)
         try:
             self._start_impl()
         except Exception as exc:     # 托盘不可用不应阻断应用
@@ -39,14 +135,24 @@ class TrayController:
         return self._icon is not None
 
     def _start_impl(self):
+        import sys
+
         import pystray
         from pystray import MenuItem
 
-        try:
-            import keyboard
-            self._hotkey_unreg = keyboard.add_hotkey("ctrl+alt+n", self._on_hotkey)
-        except Exception:
-            self._hotkey_unreg = None
+        if sys.platform == "win32":
+            self._hotkey = _HotkeyListener(
+                _MOD_CONTROL | _MOD_ALT, _VK_N, self._on_hotkey)
+            self._hotkey.start()
+            if self._hotkey._ready.wait(timeout=2):
+                if not self._hotkey._registered:
+                    err = self._hotkey._error
+                    if err == 1409:     # ERROR_HOTKEY_ALREADY_REGISTERED
+                        print("warning: 全局热键 Ctrl+Alt+N 已被其他程序占用"
+                              "（通常是上一个本程序实例仍驻留托盘，请从托盘菜单“退出”后再试）")
+                    else:
+                        print("warning: 全局热键 Ctrl+Alt+N 注册失败"
+                              "（GetLastError=%d）" % err)
 
         menu = pystray.Menu(
             MenuItem("显示/隐藏", self._on_menu_toggle),
@@ -56,13 +162,13 @@ class TrayController:
         self._icon.run_detached()
 
     def stop(self):
-        if self._hotkey_unreg is not None:
+        self._polling = False
+        if self._hotkey is not None:
             try:
-                import keyboard
-                keyboard.remove_hotkey(self._hotkey_unreg)
+                self._hotkey.stop()
             except Exception:
                 pass
-            self._hotkey_unreg = None
+            self._hotkey = None
         if self._icon is not None:
             try:
                 self._icon.stop()
@@ -70,15 +176,32 @@ class TrayController:
                 pass
             self._icon = None
 
-    # ---- 外部线程入口（仅派发，不碰 Tk）----
+    # ---- 跨线程封送：外部线程只入队，主线程 _poll/_drain 消费 ----
+    def _marshal(self, fn):
+        self._calls.put(fn)
+
+    def _drain(self):
+        while True:
+            try:
+                fn = self._calls.get_nowait()
+            except queue.Empty:
+                return
+            fn()
+
+    def _poll(self):
+        self._drain()
+        if self._polling:
+            self._root.after(50, self._poll)
+
+    # ---- 外部线程入口（仅入队，绝不碰 Tk）----
     def _on_hotkey(self):
-        self._root.after(0, self.toggle_visibility)
+        self._marshal(self.toggle_visibility)
 
     def _on_menu_toggle(self, _icon=None, _item=None):
-        self._root.after(0, self.toggle_visibility)
+        self._marshal(self.toggle_visibility)
 
     def _on_menu_quit(self, _icon=None, _item=None):
-        self._root.after(0, self._on_quit)
+        self._marshal(self._on_quit)
 
     # ---- 主线程状态机 ----
     def toggle_visibility(self):

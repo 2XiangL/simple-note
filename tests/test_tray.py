@@ -51,10 +51,11 @@ def test_tray_state_machine():
     assert tc._hidden is True
 
 
-def test_tray_on_hotkey_marshals_via_after():
+def test_tray_on_hotkey_marshals_via_queue():
     root = _FakeRoot()
     tc = tray.TrayController(root, on_quit=lambda: None, on_hide=lambda: None)
-    tc._on_hotkey()
-    assert root.after_calls == 1
-    # after 同步执行了 toggle -> hide
+    tc._on_hotkey()          # 模拟监听线程入队（不碰 Tk）
+    assert tc._hidden is False
+    tc._drain()              # 主线程消费 -> toggle -> hide
     assert tc._hidden is True
+    assert root.withdrawed is True
