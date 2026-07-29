@@ -41,15 +41,22 @@ class NotesPanel(ttk.Frame):
         self._docs.pop(idx)
         self.listbox.delete(idx)
         if self._docs:
-            self.listbox.selection_set(0)
+            self.select(self._docs[0])
 
     def refresh(self, doc):
         try:
             idx = self._docs.index(doc)
         except ValueError:
             return
+        was_selected = idx in self.listbox.curselection()
+        was_active = self.listbox.index("active") == idx
         self.listbox.delete(idx)
         self.listbox.insert(idx, doc.display_title)
+        if was_selected:
+            self.listbox.selection_set(idx)
+        if was_active:
+            self.listbox.activate(idx)
+        self.listbox.see(idx)
 
     def select(self, doc):
         try:
@@ -59,6 +66,7 @@ class NotesPanel(ttk.Frame):
         self.listbox.selection_clear(0, tk.END)
         self.listbox.selection_set(idx)
         self.listbox.activate(idx)
+        self.listbox.see(idx)
 
     def selected_doc(self):
         sel = self.listbox.curselection()
