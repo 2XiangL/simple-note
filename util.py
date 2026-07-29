@@ -37,3 +37,16 @@ def style_to_tag_config(style, family=DEFAULT_FAMILY, base_size=DEFAULT_SIZE):
     if "fg" in style:
         config["foreground"] = style["fg"]
     return config
+
+
+def get_clipboard_image():
+    """从剪贴板获取 PIL.Image，无图或失败返回 None。"""
+    try:
+        from PIL import ImageGrab
+    except Exception:
+        return None
+    try:
+        img = ImageGrab.grabclipboard()
+    except Exception:
+        return None
+    return img
