@@ -190,3 +190,11 @@ def test_typed_text_with_empty_style_adds_no_tag(tk_root):
     ed._on_cursor_move()
     tags = [t for t in ed.tag_names("1.2") if t in ed._style_tags]
     assert tags == []
+
+
+def test_set_line_spacing_configures_spacing(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.set_line_spacing(4)
+    assert int(ed.cget("spacing1")) == 4
+    assert int(ed.cget("spacing2")) == 4
+    assert int(ed.cget("spacing3")) == 0

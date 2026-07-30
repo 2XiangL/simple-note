@@ -239,6 +239,10 @@ class RichTextEditor(tk.Text):
         self._current_style = {}
         self._pending = False
 
+    def set_line_spacing(self, px):
+        """设置全局行间距（widget 级 spacing1/2/3）。"""
+        self.configure(spacing1=px, spacing2=px, spacing3=0)
+
     # ---- 图片 ----
     def _placeholder_source(self):
         from PIL import Image as PILImage
