@@ -24,11 +24,20 @@ class RichTextEditor(tk.Text):
         self._loading = False
         self._on_dirty = None
         self._resizer = None
+        self._ime_style = None        # 上次成功同步给输入法的样式
+        self._default_family = None   # 惰性解析：命名字体 -> 真实 family
+        self._widget_font = (family, base_size, "")  # 控件基础字体，跟随 _current_style
         self.bind("<KeyPress>", self._on_key_press, add="+")
         self.bind("<KeyRelease>", self._on_cursor_move, add="+")
         self.bind("<ButtonRelease-1>", self._on_cursor_move, add="+")
         self.bind("<Control-v>", self._on_paste, add="+")
         self.bind("<Double-Button-1>", self._on_double_click, add="+")
+        # 晚绑定：排在默认 "Text" 类绑定（真正插字）之后触发，使 _stamp_typed_range
+        # 能在重绘前把 _current_style 套到刚插入的字上，消除打字时的字号/字体闪烁。
+        self._late_tag = "RichTextLate_%x" % id(self)
+        self.bindtags(self.bindtags() + (self._late_tag,))
+        self.bind_class(self._late_tag, "<KeyPress>", self._stamp_typed_range, add="+")
+        self.bind("<FocusIn>", self._on_focus_in, add="+")
 
     # ---- dirty 回调 ----
     def set_on_dirty(self, callback):
@@ -42,6 +51,14 @@ class RichTextEditor(tk.Text):
             return
         if self._on_dirty:
             self._on_dirty()
+
+    def destroy(self):
+        # 清理实例级晚绑定标签，避免绑定表泄漏
+        try:
+            self.unbind_class(self._late_tag)
+        except Exception:
+            pass
+        super().destroy()
 
     # ---- 样式标签管理 ----
     def _get_or_create_tag(self, style):
@@ -62,28 +79,75 @@ class RichTextEditor(tk.Text):
 
     def _on_key_press(self, event):
         # 默认 <KeyPress> 类绑定走 Tcl 层 insert，绕过下面的 Python insert()。
-        # 这里在打字前记录光标，KeyRelease 时把当前样式套到刚输入的范围。
+        # 这里在打字前记录光标，由排在类绑定之后的晚绑定 _stamp_typed_range 把当前
+        # 样式套到刚输入的范围（发生在同一 KeyPress 事件内、重绘之前）。
         if event.char and not (event.state & 0x4):
             self._type_start = self.index("insert")
         else:
             self._type_start = None
 
     def _on_cursor_move(self, _event=None):
-        if self._type_start is not None:
-            start = self._type_start
-            self._type_start = None
-            now = self.index("insert")
-            if self.compare(now, ">", start):
-                if self._current_style:
-                    tag = self._get_or_create_tag(self._current_style)
-                    self.tag_add(tag, start, now)
-                self._pending = False
-                self._mark_dirty()
         if not self._pending:
             before = self.index("insert -1c")
             self._current_style = self._style_at(before)
+        self._sync_widget_font()
+        self._sync_ime_font()
         if self._on_cursor_style:
             self._on_cursor_style(dict(self._current_style))
+
+    def _stamp_typed_range(self, _event=None):
+        # 在默认 "Text" 类绑定（真正插字）之后、重绘之前由晚绑定触发：把
+        # _current_style 套到刚输入的范围，避免裸字先以基础字号渲染再跳变（Bug 1）。
+        if self._type_start is None:
+            return
+        start = self._type_start
+        self._type_start = None
+        now = self.index("insert")
+        if self.compare(now, ">", start):
+            tag = self._get_or_create_tag(self._current_style)
+            self.tag_add(tag, start, now)
+            self._pending = False
+            self._mark_dirty()
+
+    def _sync_widget_font(self):
+        # 让控件基础字体跟随 _current_style：空行的插入光标高度由控件字体决定，
+        # 这样回车到新空行后光标高度与当前字号一致。正文已逐字打标签，不受影响。
+        font = util.style_to_font(self._current_style, self.family, self.base_size)
+        if font != self._widget_font:
+            self._widget_font = font
+            self.configure(font=font)
+
+    def _sync_ime_font(self, _event=None):
+        # 把当前样式同步给系统输入法的预编辑/候选窗，使中文输入时的拼音与正文同号。
+        # 仅在 _current_style 真正变化时调用 Win32；非 Windows 平台 imefont 为空操作。
+        if self._current_style == self._ime_style:
+            return
+        try:
+            import tkinter.font as tkfont
+
+            import imefont
+            if self._default_family is None:
+                try:
+                    self._default_family = tkfont.Font(name=self.family, exists=True).actual()["family"]
+                except Exception:
+                    self._default_family = self.family
+            point = self._current_style.get("size", self.base_size)
+            ok = imefont.set_composition_font(
+                self, self._default_family, point,
+                bold=bool(self._current_style.get("bold")),
+                italic=bool(self._current_style.get("italic")),
+                strike=bool(self._current_style.get("strike")),
+            )
+            if ok:
+                self._ime_style = dict(self._current_style)
+        except Exception:
+            pass
+
+    def _on_focus_in(self, _event=None):
+        # 切回窗口后输入上下文可能被重置，强制重新同步一次输入法字体
+        self._ime_style = None
+        self._sync_widget_font()
+        self._sync_ime_font()
 
     # ---- 文本插入（自动套用当前样式）----
     def insert(self, index, chars, *args):
@@ -92,10 +156,9 @@ class RichTextEditor(tk.Text):
         if self._loading:
             self._mark_dirty()
             return
-        if self._current_style:
-            tag = self._get_or_create_tag(self._current_style)
-            end = self.index("%s +%dc" % (start, len(chars)))
-            self.tag_add(tag, start, end)
+        tag = self._get_or_create_tag(self._current_style)
+        end = self.index("%s +%dc" % (start, len(chars)))
+        self.tag_add(tag, start, end)
         self._pending = False
         self._mark_dirty()
 
@@ -115,10 +178,23 @@ class RichTextEditor(tk.Text):
 
     def apply_style_to_selection(self, delta):
         if self.tag_ranges("sel"):
-            self._apply_delta_range(self.index("sel.first"), self.index("sel.last"), delta)
+            sel_first = self.index("sel.first")
+            sel_last = self.index("sel.last")
+            self._apply_delta_range(sel_first, sel_last, delta)
+            # 选区样式只作用于选区本身；后续输入沿用周围样式，但去掉本次应用的属性，
+            # 这样加粗/斜体/删除线/换颜色后紧随输入的文字不带该效果（Bug 2）。
+            surround = self._style_at(self.index("%s -1c" % sel_last))
+            self._current_style = util.merge_style(surround, {k: None for k in delta})
+            self._pending = True  # 保护该样式不被随后的光标移动覆盖，直到被输入消费
+            self._sync_widget_font()
+            self._sync_ime_font()
+            if self._on_cursor_style:
+                self._on_cursor_style(dict(self._current_style))
         else:
             self._current_style = util.merge_style(self._current_style, delta)
             self._pending = True
+            self._sync_widget_font()
+            self._sync_ime_font()
             self._mark_dirty()
 
     def _apply_delta_range(self, start, end, delta):
@@ -141,9 +217,9 @@ class RichTextEditor(tk.Text):
         for kind, value, _index in self.dump("1.0", "end-1c", text=True, tag=True, image=True, mark=False, window=False):
             if kind == "text":
                 ops.append({"k": "text", "text": value})
-            elif kind == "tagon" and value in self._style_tags:
+            elif kind == "tagon" and value in self._style_tags and self._style_tags[value]:
                 ops.append({"k": "tagon", "name": value})
-            elif kind == "tagoff" and value in self._style_tags:
+            elif kind == "tagoff" and value in self._style_tags and self._style_tags[value]:
                 ops.append({"k": "tagoff", "name": value})
             elif kind == "image" and value in self._images:
                 ops.append({"k": "image", "id": value})
@@ -227,9 +303,13 @@ class RichTextEditor(tk.Text):
                     start = self.index("end-1c")
                     super().insert("end-1c", op["text"])
                     end = self.index("end-1c")
-                    for t in active:
-                        if t in self._style_tags:
-                            self.tag_add(t, start, end)
+                    styled = [t for t in active if t in self._style_tags]
+                    for t in styled:
+                        self.tag_add(t, start, end)
+                    if not styled:
+                        # 无样式正文（旧文件）补一个基础样式标签，确保全文逐字有标签，
+                        # 这样控件字体随 _current_style 变化时不会污染正文。
+                        self.tag_add(self._get_or_create_tag({}), start, end)
                 elif k == "image":
                     img_id = op["id"]
                     if img_id in self._images:
@@ -238,6 +318,8 @@ class RichTextEditor(tk.Text):
             self._loading = False
         self._current_style = {}
         self._pending = False
+        self._sync_widget_font()
+        self._sync_ime_font()
 
     def set_line_spacing(self, px):
         """设置全局行间距（widget 级 spacing1/2/3）。"""

@@ -16,7 +16,7 @@ class FormatToolbar(ttk.Frame):
         self.color_btn = ttk.Button(self, text="颜色", width=6, command=self.on_color)
         self.color_btn.pack(side=tk.LEFT, padx=2, pady=2)
 
-        self.size_var = tk.StringVar(value="12")
+        self.size_var = tk.StringVar(value=str(util.DEFAULT_SIZE))
         self.size_box = ttk.Combobox(
             self, textvariable=self.size_var, width=4, values=[str(s) for s in range(8, 73, 2)]
         )

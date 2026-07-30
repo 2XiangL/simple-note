@@ -14,7 +14,7 @@ def test_merge_style_empty_base():
 
 
 def test_style_to_font_basic():
-    assert util.style_to_font({}) == ("TkDefaultFont", 12, "")
+    assert util.style_to_font({}) == ("TkDefaultFont", 20, "")
 
 
 def test_style_to_font_bold_italic_size():
@@ -36,4 +36,4 @@ def test_style_to_tag_config_no_strike_omits_key():
     cfg = util.style_to_tag_config({"bold": True})
     assert "overstrike" not in cfg
     assert "foreground" not in cfg
-    assert cfg["font"] == ("TkDefaultFont", 12, "bold")
+    assert cfg["font"] == ("TkDefaultFont", 20, "bold")

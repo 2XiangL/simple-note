@@ -1,7 +1,7 @@
 """纯函数：富文本样式逻辑 + 剪贴板图片工具。"""
 
 DEFAULT_FAMILY = "TkDefaultFont"
-DEFAULT_SIZE = 12
+DEFAULT_SIZE = 20
 
 
 def merge_style(base, delta):

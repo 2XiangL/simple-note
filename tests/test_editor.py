@@ -42,11 +42,14 @@ def test_insert_inherits_current_style(tk_root):
     assert ed._style_at("1.0").get("bold") is True
 
 
-def test_insert_no_style_when_current_empty(tk_root):
+def test_insert_base_text_gets_base_tag(tk_root):
+    # 基础样式插入也打一个基础样式标签：让控件字体可随 _current_style 变化
+    # 而不污染无标签正文（空行光标修复的前提）。
     ed = editor.RichTextEditor(tk_root)
     ed.insert("end-1c", "Hi")
     tags = [t for t in ed.tag_names("1.0") if t in ed._style_tags]
-    assert tags == []
+    assert len(tags) == 1
+    assert ed._style_tags[tags[0]] == {}
 
 
 def test_apply_style_no_selection_sets_current_style(tk_root):
@@ -167,29 +170,123 @@ class _FakeKey:
         self.state = state
 
 
-def test_typed_text_receives_pending_style(tk_root):
-    # 真实打字走默认 <KeyPress> 类绑定 -> Tcl 层 insert，绕过 Python insert 重写。
-    # 模拟该路径：KeyPress 记录起点 -> Tcl 层 insert 插字 -> KeyRelease 套样式。
+def test_typed_char_styled_in_keypress_phase(tk_root):
+    # 真实打字：默认 <KeyPress> 类绑定走 Tcl 层 insert 插入裸字。同一 KeyPress 事件
+    # 里排在类绑定之后的晚绑定 _stamp_typed_range 立即把 _current_style 套到刚插入
+    # 的字上——发生在重绘之前，避免「先旧字号再跳变」的闪烁（Bug 1）。
     ed = editor.RichTextEditor(tk_root)
     ed.apply_style_to_selection({"size": 20})   # 无选区 -> pending
     assert ed._pending is True
     start = ed.index("insert")
-    ed._on_key_press(_FakeKey("z"))             # 记录打字前光标
-    ed.tk.call(ed._w, "insert", "insert", "z")  # 默认绑定的 C 层 insert
-    ed._on_cursor_move()                        # KeyRelease 把 pending 套到刚输入的字
+    ed._on_key_press(_FakeKey("z"))             # 早绑定：记录打字前光标
+    ed.tk.call(ed._w, "insert", "insert", "z")  # 默认类绑定：C 层插入裸字
+    ed._stamp_typed_range()                     # 晚绑定：重绘前立即套样式（尚未 KeyRelease）
     assert ed._style_at(start).get("size") == 20
     assert ed._pending is False
 
 
+def test_late_keypress_handler_registered_after_text_class(tk_root):
+    # 晚绑定标签必须排在 "Text" 类绑定之后，保证插字先发生、套样式随后
+    ed = editor.RichTextEditor(tk_root)
+    tags = ed.bindtags()
+    text_idx = tags.index("Text")
+    assert ed._late_tag in tags
+    assert tags.index(ed._late_tag) > text_idx
+
+
 def test_typed_text_with_empty_style_adds_no_tag(tk_root):
+    # 空基础样式输入的字改为带一个基础样式标签（旧契约是「无标签」）。
     ed = editor.RichTextEditor(tk_root)
     ed.insert_plain("ab")
     ed.mark_set("insert", "end-1c")
     ed._on_key_press(_FakeKey("c"))
     ed.tk.call(ed._w, "insert", "insert", "c")
-    ed._on_cursor_move()
+    ed._stamp_typed_range()
     tags = [t for t in ed.tag_names("1.2") if t in ed._style_tags]
-    assert tags == []
+    assert len(tags) == 1
+    assert ed._style_tags[tags[0]] == {}
+
+
+def test_widget_font_tracks_current_style(tk_root):
+    # 空行的插入光标高度由控件基础字体决定；让控件字体跟随 _current_style，
+    # 这样回车到空行后光标高度与当前字号一致。
+    import tkinter.font as tkfont
+    ed = editor.RichTextEditor(tk_root)
+    ed.apply_style_to_selection({"size": 20})
+    assert tkfont.Font(font=ed.cget("font")).actual()["size"] == 20
+    ed.apply_style_to_selection({"size": 8})
+    assert tkfont.Font(font=ed.cget("font")).actual()["size"] == 8
+
+
+def test_roundtrip_filters_base_tag(tk_root):
+    # 基础样式标签在序列化时被剔除（文件紧凑、向后兼容），往返仍一致。
+    ed = editor.RichTextEditor(tk_root)
+    ed._on_key_press(_FakeKey("a"))
+    ed.tk.call(ed._w, "insert", "insert", "a")
+    ed._stamp_typed_range()
+    tags = [t for t in ed.tag_names("1.0") if t in ed._style_tags]
+    assert len(tags) == 1 and ed._style_tags[tags[0]] == {}
+    doc = ed.to_document()
+    assert doc["styles"] == {}
+    assert [op["k"] for op in doc["ops"]] == ["text"]
+    ed2 = editor.RichTextEditor(tk_root)
+    ed2.from_document(doc, {})
+    assert ed2.to_document() == doc
+
+
+def test_from_document_tags_untagged_base(tk_root):
+    # 加载含无标签正文的（旧）文件时，内部补上基础标签，避免控件字体变化时污染。
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    doc = ed.to_document()
+    assert doc["styles"] == {}
+    ed2 = editor.RichTextEditor(tk_root)
+    ed2.from_document(doc, {})
+    tags = [t for t in ed2.tag_names("1.0") if t in ed2._style_tags]
+    assert len(tags) == 1 and ed2._style_tags[tags[0]] == {}
+    assert ed2.to_document() == doc
+
+
+def test_typed_after_selection_format_excludes_applied_attr(tk_root):
+    # Bug 2：对选区应用 加粗/斜体/删除线/颜色 后，紧随其后输入的文字不应带上该效果。
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    ed._apply_delta_range("1.0", "1.2", {"size": 14})   # 周围文字为 14 号
+    ed.tag_add("sel", "1.0", "1.1")                      # 选中 "a"
+    ed.mark_set("insert", "1.1")                         # 光标在选区末尾
+    ed.apply_style_to_selection({"bold": True})          # 把 "a" 加粗
+    # 后续输入样式 = 周围样式(14号) 去掉本次应用的属性(bold)
+    assert ed._current_style.get("size") == 14
+    assert not ed._current_style.get("bold")
+    assert ed._pending is True
+    # 模拟用户点击选区后面定位光标（清选区）再输入：pending 保护样式不被覆盖
+    ed.tag_remove("sel", "1.0", "end")
+    ed.mark_set("insert", "1.1")
+    ed._on_cursor_move()
+    assert ed._current_style.get("size") == 14
+    assert not ed._current_style.get("bold")
+    ed._on_key_press(_FakeKey("X"))
+    ed.tk.call(ed._w, "insert", "insert", "X")
+    ed._stamp_typed_range()
+    assert ed._style_at("1.1").get("size") == 14   # 保留周围字号
+    assert not ed._style_at("1.1").get("bold")      # 不带刚应用的加粗
+
+
+def test_typed_after_color_selection_excludes_color(tk_root):
+    # Bug 2：换颜色只作用于选区，后续输入不带该颜色
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    ed.tag_add("sel", "1.0", "1.1")
+    ed.mark_set("insert", "1.1")
+    ed.apply_style_to_selection({"fg": "#ff0000"})
+    assert not ed._current_style.get("fg")
+    ed.tag_remove("sel", "1.0", "end")
+    ed.mark_set("insert", "1.1")
+    ed._on_cursor_move()
+    ed._on_key_press(_FakeKey("X"))
+    ed.tk.call(ed._w, "insert", "insert", "X")
+    ed._stamp_typed_range()
+    assert not ed._style_at("1.1").get("fg")
 
 
 def test_set_line_spacing_configures_spacing(tk_root):
@@ -198,3 +295,20 @@ def test_set_line_spacing_configures_spacing(tk_root):
     assert int(ed.cget("spacing1")) == 4
     assert int(ed.cget("spacing2")) == 4
     assert int(ed.cget("spacing3")) == 0
+
+
+def test_sync_ime_font_does_not_crash_across_style_changes(tk_root):
+    # 输入法预编辑窗字体同步在样式/光标变化时调用，绝不应抛异常；
+    # 具体预编辑观感需在带输入法的 Windows 桌面人工验证。
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    ed._apply_delta_range("1.0", "1.2", {"size": 20, "bold": True})
+    ed.mark_set("insert", "1.1")
+    ed._on_cursor_move()                 # 进入 20 号粗体区域
+    ed.mark_set("insert", "1.0")
+    ed._on_cursor_move()
+    ed.apply_style_to_selection({"italic": True})  # 无选区 -> pending
+    ed.mark_set("insert", "end-1c")
+    ed._on_cursor_move()
+    # _ime_style 要么仍未同步(None，控件未真正显示)，要么记录了最后一次样式
+    assert ed._ime_style is None or ed._ime_style.get("size") in (None, 20)
