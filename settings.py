@@ -25,3 +25,36 @@ def px_for_level(name):
 def settings_path():
     """设置文件默认路径：~/.simple-note/settings.json。"""
     return Path.home() / ".simple-note" / "settings.json"
+
+
+def load_settings(path=None):
+    """读取设置；缺失/损坏/类型错/未知档位均回退默认值，绝不抛。
+
+    path 为 None 时用 settings_path()。返回值总是完整的（含 version 与合法 line_spacing）。
+    """
+    path = Path(path) if path is not None else settings_path()
+    data = default_settings()
+    try:
+        if not path.exists():
+            return data
+        with path.open("r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, ValueError) as exc:
+        print("warning: failed to load settings (%s); using defaults" % exc, file=sys.stderr)
+        return data
+    if isinstance(raw, dict):
+        level = raw.get("line_spacing")
+        if level in LINE_SPACING_PRESETS:
+            data["line_spacing"] = level
+    return data
+
+
+def save_settings(settings_data, path=None):
+    """写入设置；OSError 仅向 stderr 警告，不抛、不阻塞 UI。"""
+    path = Path(path) if path is not None else settings_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(settings_data, f, ensure_ascii=False)
+    except OSError as exc:
+        print("warning: failed to save settings (%s)" % exc, file=sys.stderr)
