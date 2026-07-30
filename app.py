@@ -6,6 +6,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 
 import snote
+import settings
 from editor import RichTextEditor
 from tray import TrayController
 from notes_panel import NotesPanel
@@ -38,6 +39,10 @@ class NoteApp:
         self.root.geometry("900x600")
         self.docs = []
         self.active = None
+
+        self.settings = settings.load_settings()
+        self._line_spacing = self.settings.get("line_spacing", settings.DEFAULT_LINE_SPACING)
+        self._ls_var = tk.StringVar(value=self._line_spacing)
 
         self._build_menu()
         self.toolbar = FormatToolbar(root)
@@ -79,6 +84,13 @@ class NoteApp:
         file_menu.add_command(label="退出", command=self._real_quit)
         menubar.add_cascade(label="文件", menu=file_menu)
 
+        view_menu = tk.Menu(menubar, tearoff=0)
+        for name in settings.PRESET_ORDER:
+            view_menu.add_radiobutton(
+                label=name, value=name, variable=self._ls_var, command=self._on_line_spacing
+            )
+        menubar.add_cascade(label="查看", menu=view_menu)
+
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="关于程序", command=self.about)
         menubar.add_cascade(label="关于", menu=help_menu)
@@ -88,9 +100,19 @@ class NoteApp:
         self.root.bind("<Control-o>", lambda e: self.open_doc())
         self.root.bind("<Control-s>", lambda e: self.save(self.active))
 
+    def _on_line_spacing(self):
+        level = self._ls_var.get()
+        self._line_spacing = level
+        px = settings.px_for_level(level)
+        for doc in self.docs:
+            doc.editor.set_line_spacing(px)
+        self.settings["line_spacing"] = level
+        settings.save_settings(self.settings)
+
     # ---- 文档生命周期 ----
     def _make_doc(self, path=None, title=None, document=None, blobs=None):
         editor = RichTextEditor(self.editor_host)
+        editor.set_line_spacing(settings.px_for_level(self._line_spacing))
         doc = NoteDocument(editor, path=path, title=title)
         editor.set_on_dirty(lambda d=doc: self._on_dirty(d))
         if document is not None:
