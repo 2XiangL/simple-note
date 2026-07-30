@@ -146,9 +146,9 @@ def _make_doc(self, ...):
 
 静默容错，绝不崩 UI：
 
-- `load_settings`：文件缺失 / 非 JSON / 类型错误 / 未知档位 → 返回 `default_settings()`，向 `stderr` 打一行警告。
+- `load_settings`：读取/解析失败（`OSError` / 非 JSON）→ 返回 `default_settings()` 并向 `stderr` 打一行警告；文件缺失 / 非 dict / 未知档位等校验性回退**静默**返回默认值（首次运行不应告警）。
 - `save_settings`：`OSError` → 向 `stderr` 警告，不弹窗、不阻塞（设置仍临时生效于本次运行，仅不落盘）。
-- `px_for_level` 收到未知值 → 回退默认档像素值。
+- `px_for_level` 收到未知值 → 静默回退默认档像素值。
 
 ## 7. 测试
 
