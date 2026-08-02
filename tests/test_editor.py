@@ -750,3 +750,60 @@ def test_resizer_cancel_restores_original_size(tk_root):
         assert ed.image_display_size(img_id) == (40, 30)  # 恢复原尺寸
     finally:
         top.destroy()
+
+
+def test_find_matches_counts_and_case(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("Foo foo FOO bar")
+    assert len(ed.find_matches("foo", case=False)) == 3
+    assert len(ed.find_matches("foo", case=True)) == 1
+    assert ed.find_matches("xyz", case=False) == []
+
+
+def test_find_matches_empty_pattern(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("abc")
+    assert ed.find_matches("", case=False) == []
+
+
+def test_search_next_wraps_and_reports_position(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("a b a b a")
+    assert ed.search_next("a", case=True) == (1, 3)
+    assert ed.search_next("a", case=True) == (2, 3)
+    assert ed.search_next("a", case=True) == (3, 3)
+    assert ed.search_next("a", case=True) == (1, 3)  # 环绕回首个
+
+
+def test_search_prev_wraps(tk_root):
+    # 依赖 Tk 语义：backwards 搜索不命中起点处的匹配，故从 sel.first 起搜不原地重复
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("a b a")
+    assert ed.search_prev("a", case=True) == (2, 2)
+    assert ed.search_prev("a", case=True) == (1, 2)
+    assert ed.search_prev("a", case=True) == (2, 2)  # 环绕回末尾
+
+
+def test_search_next_no_match_returns_none(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("abc")
+    assert ed.search_next("z", case=False) is None
+
+
+def test_search_empty_pattern_clears(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("a a")
+    ed.search_next("a", case=True)
+    assert ed.search_next("", case=True) is None
+    assert not ed.tag_ranges("search_all")
+
+
+def test_search_highlights_and_clear(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("x y x")
+    ed.search_next("x", case=True)
+    assert ed.tag_ranges("search_all")   # 全部匹配有底纹
+    assert ed.tag_ranges("search_cur")   # 当前匹配有底纹
+    ed.clear_search_highlight()
+    assert not ed.tag_ranges("search_all")
+    assert not ed.tag_ranges("search_cur")

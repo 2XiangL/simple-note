@@ -32,6 +32,8 @@ class RichTextEditor(tk.Text):
         self._ime_style = None        # 上次成功同步给输入法的样式
         self._default_family = None   # 惰性解析：命名字体 -> 真实 family
         self._widget_font = (family, base_size, "")  # 控件基础字体，跟随 _current_style
+        self.tag_configure("search_all", background="#fff3b0")  # 全部匹配底纹
+        self.tag_configure("search_cur", background="#ffd24d")  # 当前匹配底纹
         self.bind("<KeyPress>", self._on_key_press, add="+")
         self.bind("<KeyRelease>", self._on_cursor_move, add="+")
         self.bind("<ButtonRelease-1>", self._on_cursor_move, add="+")
@@ -183,6 +185,80 @@ class RichTextEditor(tk.Text):
         self._ime_style = None
         self._sync_widget_font()
         self._sync_ime_font()
+
+    # ---- 查找 ----
+    def find_matches(self, pattern, case):
+        """收集全部匹配 [(start, end)]；case=True 区分大小写；空 pattern 返回 []。"""
+        if not pattern:
+            return []
+        matches = []
+        pos = "1.0"
+        while True:
+            pos = self.search(pattern, pos, stopindex=tk.END, nocase=not case)
+            if not pos:
+                return matches
+            end = self.index("%s+%dc" % (pos, len(pattern)))
+            matches.append((pos, end))
+            pos = end
+
+    def search_next(self, pattern, case):
+        """从选区尾（无选区则 insert）向后环绕查找；命中返回 (序号, 总数)，否则 None。"""
+        if not pattern:
+            self.clear_search_highlight()
+            return None
+        origin = "sel.last" if self.tag_ranges("sel") else "insert"
+        pos = self.search(pattern, origin, stopindex=tk.END, nocase=not case)
+        if not pos:
+            pos = self.search(pattern, "1.0", stopindex=tk.END, nocase=not case)
+        if not pos:
+            self.clear_search_highlight()
+            return None
+        return self._select_match(pos, pattern, case)
+
+    def search_prev(self, pattern, case):
+        """从选区头（无选区则 insert）向前环绕查找；命中返回 (序号, 总数)，否则 None。"""
+        if not pattern:
+            self.clear_search_highlight()
+            return None
+        origin = "sel.first" if self.tag_ranges("sel") else "insert"
+        pos = self.search(pattern, origin, stopindex="1.0", backwards=True, nocase=not case)
+        if not pos:
+            pos = self.search(pattern, tk.END, stopindex="1.0", backwards=True, nocase=not case)
+        if not pos:
+            self.clear_search_highlight()
+            return None
+        return self._select_match(pos, pattern, case)
+
+    def _select_match(self, start, pattern, case):
+        end = self.index("%s+%dc" % (start, len(pattern)))
+        self.mark_set("insert", start)
+        self.tag_remove("sel", "1.0", tk.END)
+        self.tag_add("sel", start, end)
+        self.see(start)
+        self.highlight_search(pattern, case, start)
+        matches = self.find_matches(pattern, case)
+        current = 0
+        for i, (s, _e) in enumerate(matches):
+            if self.compare(s, "==", start):
+                current = i + 1
+                break
+        return (current, len(matches))
+
+    def highlight_search(self, pattern, case, current_start=None):
+        """刷新查找底纹：search_all 覆盖全部匹配，search_cur 覆盖当前匹配。"""
+        self.tag_remove("search_all", "1.0", tk.END)
+        self.tag_remove("search_cur", "1.0", tk.END)
+        for s, e in self.find_matches(pattern, case):
+            self.tag_add("search_all", s, e)
+        if current_start is not None:
+            self.tag_add("search_cur", current_start, "%s+%dc" % (current_start, len(pattern)))
+        self.tag_raise("search_all")
+        self.tag_raise("search_cur")  # 后 raise 优先级更高：当前匹配盖住全部匹配
+
+    def clear_search_highlight(self):
+        """移除全部查找底纹。"""
+        self.tag_remove("search_all", "1.0", tk.END)
+        self.tag_remove("search_cur", "1.0", tk.END)
 
     # ---- 文本插入（自动套用当前样式）----
     def insert(self, index, chars, *args):
