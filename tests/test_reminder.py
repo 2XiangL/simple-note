@@ -145,3 +145,33 @@ def test_pomodoro_remaining_format():
     s.start_pomodoro(t0)
     assert s.pomodoro_remaining(t0) == ("工作中", "25:00", "第1/共4轮")
     assert s.pomodoro_remaining(t0 + timedelta(minutes=10)) == ("工作中", "15:00", "第1/共4轮")
+
+
+def test_pomodoro_tick_without_boundary_returns_empty():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 4})
+    s.start_pomodoro(t0)
+    assert s.tick(t0 + timedelta(minutes=10)) == []   # 未跨阶段边界
+
+
+def test_pomodoro_remaining_clamps_negative_to_zero():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 4})
+    s.start_pomodoro(t0)
+    # 已过时点 -> 剩余 00:00 而非负数
+    assert s.pomodoro_remaining(t0 + timedelta(minutes=40)) == ("工作中", "00:00", "第1/共4轮")
+
+
+def test_pomodoro_phase_transition_messages():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 2})
+    s.start_pomodoro(t0)
+    ev = s.tick(t0 + timedelta(minutes=25))
+    assert ev[0]["title"] == "工作结束" and "休息" in ev[0]["message"]
+    ev = s.tick(t0 + timedelta(minutes=30))
+    assert ev[0]["title"] == "休息结束" and "第 2 轮" in ev[0]["message"]
+    # 第2轮工作的剩余标签为 第2/共2轮
+    assert s.pomodoro_remaining(t0 + timedelta(minutes=30)) == ("工作中", "25:00", "第2/共2轮")
