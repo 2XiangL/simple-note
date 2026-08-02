@@ -93,7 +93,8 @@ def test_apply_pomodoro_cfg_valid_returns_true(tk_root):
 
 def test_on_pomo_toggle_invalid_cfg_shows_warning(tk_root, monkeypatch):
     sched = reminder.ReminderScheduler()
-    dlg = ReminderDialog(tk_root, sched, {"mode": "system", "path": ""}, on_change=lambda: None)
+    calls = []
+    dlg = ReminderDialog(tk_root, sched, {"mode": "system", "path": ""}, on_change=lambda: calls.append(1))
     warns = []
     monkeypatch.setattr("reminder_dialog.messagebox.showwarning", lambda *a, **k: warns.append(a))
     try:
@@ -101,13 +102,15 @@ def test_on_pomo_toggle_invalid_cfg_shows_warning(tk_root, monkeypatch):
         dlg._on_pomo_toggle()
         assert warns == [("番茄钟", "参数格式不正确。")]
         assert sched.pomodoro_phase() == "idle"  # 未 start/stop
+        assert calls == [], "非法输入不应触发持久化"
     finally:
         dlg.destroy()
 
 
 def test_on_add_rejects_past_oneshot(tk_root, monkeypatch):
     sched = reminder.ReminderScheduler()
-    dlg = ReminderDialog(tk_root, sched, {"mode": "system", "path": ""}, on_change=lambda: None)
+    calls = []
+    dlg = ReminderDialog(tk_root, sched, {"mode": "system", "path": ""}, on_change=lambda: calls.append(1))
     warns = []
     monkeypatch.setattr("reminder_dialog.messagebox.showwarning", lambda *a, **k: warns.append(a))
     monkeypatch.setattr("reminder_dialog.datetime", _FakeDT)
@@ -118,8 +121,9 @@ def test_on_add_rejects_past_oneshot(tk_root, monkeypatch):
         dlg._hour_var.set(11)
         dlg._minute_var.set(30)
         dlg._on_add()
-        assert warns and warns[0][1] == "时间必须晚于当前。"
+        assert warns == [("新增提醒", "时间必须晚于当前。")]
         assert sched.list_reminders() == ([], [])  # 未新增
+        assert calls == []  # _on_change 未被调用
     finally:
         dlg.destroy()
 
