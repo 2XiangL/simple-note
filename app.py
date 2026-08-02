@@ -201,7 +201,11 @@ class NoteApp:
         doc = NoteDocument(editor, path=path, title=title)
         editor.set_on_dirty(lambda d=doc: self._on_dirty(d))
         if document is not None:
-            editor.from_document(document, blobs or {})
+            try:
+                editor.from_document(document, blobs or {})
+            except Exception:
+                editor.destroy()  # 载入失败不泄漏孤儿编辑器控件（open_doc 兜底弹框）
+                raise
         return doc
 
     def add_doc(self, doc):
@@ -217,6 +221,12 @@ class NoteApp:
         path = filedialog.askopenfilename(title="打开笔记", filetypes=NOTE_FILTER)
         if not path:
             return
+        key = os.path.normcase(os.path.realpath(path))
+        for doc in self.docs:
+            # 已在打开列表中的文档（doc.path 可能为 None=未保存，需过滤）
+            if doc.path is not None and os.path.normcase(os.path.realpath(doc.path)) == key:
+                self.switch_to(doc)
+                return
         try:
             document, blobs = snote.load_document(path)
         except ValueError as exc:
@@ -237,7 +247,8 @@ class NoteApp:
             blobs = doc.editor.get_image_blobs()
             snote.save_document(path, document, blobs)
             return True
-        except OSError as exc:
+        except Exception as exc:
+            # 除磁盘 OSError 外，PIL 编码/Tcl 等异常也走“保存失败”弹框，不裸抛
             messagebox.showerror("保存失败", "写入失败：%s" % exc)
             return False
 

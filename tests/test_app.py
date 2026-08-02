@@ -1,0 +1,106 @@
+import os
+from types import SimpleNamespace
+
+import pytest
+
+import settings
+
+
+class _FakeDoc:
+    def __init__(self, path):
+        self.path = path
+        self.dirty = False
+
+
+def test_open_doc_dedupes_already_open_path(tmp_path, monkeypatch):
+    # 打开已在 docs 中的路径：直接 switch_to 该文档，不重新 load、不新建
+    from app import NoteApp
+    f = tmp_path / "a.snote"
+    f.write_bytes(b"x")
+    app = NoteApp.__new__(NoteApp)
+    existing = _FakeDoc(path=str(f))
+    app.docs = [existing]
+    calls = []
+    app.switch_to = lambda d: calls.append(("switch", d))
+    monkeypatch.setattr("app.filedialog.askopenfilename", lambda **k: str(f))
+    monkeypatch.setattr("app.snote.load_document", lambda p: calls.append(("load", p)))
+    app.open_doc()
+    assert calls == [("switch", existing)]
+
+
+def test_open_doc_dedupes_by_realpath_case(tmp_path, monkeypatch):
+    # 同一文件的不同写法（大小写/相对路径）仍判重
+    from app import NoteApp
+    f = tmp_path / "CaseTest.snote"
+    f.write_bytes(b"x")
+    app = NoteApp.__new__(NoteApp)
+    existing = _FakeDoc(path=os.path.join(str(tmp_path), "casetest.SNOTE"))
+    app.docs = [existing]
+    calls = []
+    app.switch_to = lambda d: calls.append(d)
+    monkeypatch.setattr("app.filedialog.askopenfilename", lambda **k: str(f))
+    monkeypatch.setattr("app.snote.load_document", lambda p: calls.append(("load", p)))
+    app.open_doc()
+    assert calls == [existing]
+
+
+def test_open_doc_ignores_unsaved_docs_in_dedupe(tmp_path, monkeypatch):
+    # doc.path 为 None（未保存）的文档不参与判重，正常走加载流程
+    from app import NoteApp
+    f = tmp_path / "b.snote"
+    f.write_bytes(b"x")
+    app = NoteApp.__new__(NoteApp)
+    app.docs = [_FakeDoc(path=None)]
+    loaded = []
+    made = []
+    monkeypatch.setattr("app.filedialog.askopenfilename", lambda **k: str(f))
+    monkeypatch.setattr("app.snote.load_document", lambda p: loaded.append(p) or ({}, {}))
+    monkeypatch.setattr(app, "_make_doc", lambda **kw: made.append(kw) or SimpleNamespace())
+    monkeypatch.setattr(app, "add_doc", lambda d: None)
+    app.open_doc()
+    assert loaded == [str(f)]
+    assert made and made[0]["path"] == str(f)
+
+
+def test_make_doc_destroys_editor_when_from_document_fails(tk_root, monkeypatch):
+    # from_document 抛错时编辑器必须被销毁，避免孤儿控件泄漏
+    import app as appmod
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    app.editor_host = tk_root
+    app._line_spacing = settings.DEFAULT_LINE_SPACING
+    destroyed = []
+
+    class _Spy(appmod.RichTextEditor):
+        def destroy(self):
+            destroyed.append(self)
+            super().destroy()
+
+    monkeypatch.setattr(appmod, "RichTextEditor", _Spy)
+    bad = {"styles": {}, "ops": [], "images": "not-a-dict"}  # from_document 抛错
+    with pytest.raises(Exception):
+        app._make_doc(document=bad, blobs={})
+    assert len(destroyed) == 1, "载入失败后编辑器未被销毁"
+    # 正常文档不受影响：不销毁、返回可用 doc
+    ok = app._make_doc(document={"styles": {}, "ops": [{"k": "text", "text": "x"}], "images": {}}, blobs={})
+    assert len(destroyed) == 1
+    assert ok.editor is not None
+
+
+def test_write_to_catches_non_oserror(tmp_path, monkeypatch):
+    # to_document/get_image_blobs 的 PIL/Tcl 异常同样走“保存失败”弹框，不裸抛
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    shown = []
+    monkeypatch.setattr("app.messagebox.showerror", lambda *a, **k: shown.append(a))
+
+    class _Ed:
+        def to_document(self):
+            raise RuntimeError("PIL 编码失败")
+
+        def get_image_blobs(self):
+            return {}
+
+    doc = SimpleNamespace(editor=_Ed())
+    assert app._write_to(doc, str(tmp_path / "x.snote")) is False
+    assert shown, "保存异常未弹框"
