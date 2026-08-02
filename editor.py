@@ -191,6 +191,10 @@ class RichTextEditor(tk.Text):
         if self._loading:
             self._mark_dirty()
             return
+        if not chars:
+            # 空串插入不移动 insert mark（end 可能 > start 且与插入无关），
+            # 整体 no-op，防止把「start→光标」区间误套当前样式（回归守卫）。
+            return
         tag = self._get_or_create_tag(self._current_style)
         end = self.index("insert")
         if self.compare(end, "<=", start):

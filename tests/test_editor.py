@@ -166,6 +166,19 @@ def test_insert_after_cursor_falls_back_to_codepoint_end(tk_root):
     assert ed._style_at("1.2") == {}  # 光标前的既有文本未被误标
 
 
+def test_insert_empty_string_is_noop(tk_root):
+    # 空串插入不移动 insert mark：若光标在插入点之后，end=光标位置 > start，
+    # 守卫不触发会把「start→光标」整段套上当前样式。空串必须整体 no-op。
+    from editor import RichTextEditor
+    ed = RichTextEditor(tk_root)
+    ed.insert("end", "abc")
+    ed.tag_add(ed._get_or_create_tag({"bold": True}), "1.1", "1.4")
+    before = [ed._style_at(i) for i in ("1.0", "1.1", "1.2")]
+    ed.insert("1.0", "")   # 空串插入，光标在 1.3
+    after = [ed._style_at(i) for i in ("1.0", "1.1", "1.2")]
+    assert after == before, "空串插入不应改变任何字符的样式"
+
+
 def test_apply_style_no_selection_sets_current_style(tk_root):
     calls = []
     ed = editor.RichTextEditor(tk_root)
