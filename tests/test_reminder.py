@@ -382,3 +382,11 @@ def test_tick_lazy_arm_baseline_set_before_subtick_runs():
     s._tick_daily = lambda now: (seen.append(s._last_tick), orig(now))[1]
     s.tick(datetime(2026, 1, 1, 8, 0))
     assert seen == [datetime(2026, 1, 1, 8, 0)]   # 旧实现此处为 [None] → 红
+
+
+def test_public_boundary_constants():
+    assert (reminder.MIN_WORK_MIN, reminder.MAX_WORK_MIN) == (1, 180)
+    assert (reminder.MIN_ROUNDS, reminder.MAX_ROUNDS) == (1, 12)
+    assert reminder.sanitize_pomodoro({"work_min": 999, "break_min": 0, "rounds": 99}) == {
+        "work_min": 180, "break_min": 1, "rounds": 12,
+    }   # 边界常量与清洗行为一致

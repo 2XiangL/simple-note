@@ -5,10 +5,11 @@ from datetime import datetime, timedelta
 
 DEFAULT_POMODORO = {"work_min": 25, "break_min": 5, "rounds": 4}
 
-_MIN_MIN = 1
-_MAX_MIN = 180
-_MIN_ROUNDS = 1
-_MAX_ROUNDS = 12
+# 番茄钟参数边界（工作/休息时长、轮数），供 sanitize_pomodoro 与对话框 spinbox 共用。
+MIN_WORK_MIN = 1
+MAX_WORK_MIN = 180
+MIN_ROUNDS = 1
+MAX_ROUNDS = 12
 
 PHASE_IDLE = "idle"
 PHASE_WORK = "work"
@@ -31,9 +32,9 @@ def sanitize_pomodoro(cfg):
     """清洗番茄钟配置；越界/非法按字段回退默认，绝不抛。"""
     cfg = cfg if isinstance(cfg, dict) else {}
     d = dict(DEFAULT_POMODORO)
-    d["work_min"] = _clamp_int(cfg.get("work_min"), _MIN_MIN, _MAX_MIN, d["work_min"])
-    d["break_min"] = _clamp_int(cfg.get("break_min"), _MIN_MIN, _MAX_MIN, d["break_min"])
-    d["rounds"] = _clamp_int(cfg.get("rounds"), _MIN_ROUNDS, _MAX_ROUNDS, d["rounds"])
+    d["work_min"] = _clamp_int(cfg.get("work_min"), MIN_WORK_MIN, MAX_WORK_MIN, d["work_min"])
+    d["break_min"] = _clamp_int(cfg.get("break_min"), MIN_WORK_MIN, MAX_WORK_MIN, d["break_min"])
+    d["rounds"] = _clamp_int(cfg.get("rounds"), MIN_ROUNDS, MAX_ROUNDS, d["rounds"])
     return d
 
 

@@ -1,5 +1,6 @@
 import json
 
+import reminder
 import settings
 
 
@@ -8,6 +9,11 @@ def test_default_settings_has_defaults():
     assert d["line_spacing"] == settings.DEFAULT_LINE_SPACING
     assert d["line_spacing"] == "标准"
     assert d["version"] == settings.SETTINGS_VERSION
+
+
+def test_pomodoro_default_single_source_in_engine():
+    # settings 只是 re-export，引擎（reminder）才是 DEFAULT_POMODORO 的真源
+    assert settings.DEFAULT_POMODORO is reminder.DEFAULT_POMODORO
 
 
 def test_preset_order_is_three_levels():
@@ -85,9 +91,9 @@ def test_save_settings_oserror_does_not_raise(tmp_path, capsys):
 
 def test_default_settings_includes_new_keys():
     d = settings.default_settings()
-    assert d["sound"] == {"mode": "system", "path": ""}
-    assert d["pomodoro"] == {"work_min": 25, "break_min": 5, "rounds": 4}
-    assert d["reminders"] == {"oneshot": [], "daily": []}
+    assert d["sound"] == dict(settings.DEFAULT_SOUND)
+    assert d["pomodoro"] == dict(settings.DEFAULT_POMODORO)
+    assert d["reminders"] == dict(settings.DEFAULT_REMINDERS)
 
 
 def test_load_settings_preserves_new_keys(tmp_path):

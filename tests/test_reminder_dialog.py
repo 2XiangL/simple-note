@@ -91,6 +91,21 @@ def test_apply_pomodoro_cfg_valid_returns_true(tk_root):
         dlg.destroy()
 
 
+def test_apply_pomodoro_cfg_clamps_and_writes_back_vars(tk_root):
+    sched = reminder.ReminderScheduler()
+    dlg = ReminderDialog(tk_root, sched, {"mode": "system", "path": ""}, on_change=lambda: None)
+    try:
+        dlg._work_var.set(500)
+        dlg._break_var.set(0)
+        dlg._rounds_var.set(99)
+        assert dlg._apply_pomodoro_cfg() is True
+        cfg = sched.pomodoro_config()
+        assert (cfg["work_min"], cfg["break_min"], cfg["rounds"]) == (180, 1, 12)
+        assert (dlg._work_var.get(), dlg._break_var.get(), dlg._rounds_var.get()) == (180, 1, 12)
+    finally:
+        dlg.destroy()
+
+
 def test_on_pomo_toggle_invalid_cfg_shows_warning(tk_root, monkeypatch):
     sched = reminder.ReminderScheduler()
     calls = []
@@ -176,6 +191,7 @@ def test_app_start_pomodoro_noop_when_running():
     sched = reminder.ReminderScheduler()
     root = _FakeRoot()
     app.scheduler, app.root = sched, root
+    app._title_cache = None
     sched.start_pomodoro(datetime(2026, 8, 2, 10, 0))
     phase_before = sched.pomodoro_phase()
     end_before = sched._phase_end
@@ -191,5 +207,26 @@ def test_app_start_pomodoro_idle_starts():
     app = NoteApp.__new__(NoteApp)
     sched = reminder.ReminderScheduler()
     app.scheduler, app.root = sched, _FakeRoot()
+    app._title_cache = None
     app._start_pomodoro()
     assert sched.pomodoro_phase() == reminder.PHASE_WORK
+
+
+def test_refresh_title_caches_unchanged_title():
+    from app import NoteApp
+
+    app = NoteApp.__new__(NoteApp)
+    sched = reminder.ReminderScheduler()
+    root = _FakeRoot()
+    app.scheduler, app.root = sched, root
+    app._title_cache = None
+    now = datetime(2026, 8, 2, 10, 0)
+    app._refresh_title(now)
+    app._refresh_title(now)
+    app._refresh_title(now)
+    assert root.titles == ["Simple Note"]  # 未变化不重设
+    sched.start_pomodoro(now)
+    app._refresh_title(now)
+    app._refresh_title(now)
+    assert len(root.titles) == 2  # 标题变化时仅设一次
+    assert root.titles[1] == "Simple Note — 工作中 25:00（第1/共4轮）"

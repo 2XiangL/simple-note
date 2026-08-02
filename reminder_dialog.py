@@ -5,6 +5,7 @@ from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
 import notify
+import reminder
 
 
 def _valid_hhmm(hour, minute):
@@ -34,11 +35,11 @@ class ReminderDialog(tk.Toplevel):
         self._break_var = tk.IntVar(value=cfg["break_min"])
         self._rounds_var = tk.IntVar(value=cfg["rounds"])
         ttk.Label(frame, text="工作(分)").pack(side=tk.LEFT, padx=2)
-        ttk.Spinbox(frame, from_=1, to=180, width=4, textvariable=self._work_var).pack(side=tk.LEFT)
+        ttk.Spinbox(frame, from_=reminder.MIN_WORK_MIN, to=reminder.MAX_WORK_MIN, width=4, textvariable=self._work_var).pack(side=tk.LEFT)
         ttk.Label(frame, text="休息(分)").pack(side=tk.LEFT, padx=2)
-        ttk.Spinbox(frame, from_=1, to=180, width=4, textvariable=self._break_var).pack(side=tk.LEFT)
+        ttk.Spinbox(frame, from_=reminder.MIN_WORK_MIN, to=reminder.MAX_WORK_MIN, width=4, textvariable=self._break_var).pack(side=tk.LEFT)
         ttk.Label(frame, text="轮数").pack(side=tk.LEFT, padx=2)
-        ttk.Spinbox(frame, from_=1, to=12, width=4, textvariable=self._rounds_var).pack(side=tk.LEFT)
+        ttk.Spinbox(frame, from_=reminder.MIN_ROUNDS, to=reminder.MAX_ROUNDS, width=4, textvariable=self._rounds_var).pack(side=tk.LEFT)
         self._pomo_btn = ttk.Button(frame, text="开始", width=6, command=self._on_pomo_toggle)
         self._pomo_btn.pack(side=tk.LEFT, padx=6)
         self._pomo_status = ttk.Label(frame, text="")
@@ -54,6 +55,10 @@ class ReminderDialog(tk.Toplevel):
         except tk.TclError:
             return False
         self._scheduler.update_pomodoro(cfg)
+        san = self._scheduler.pomodoro_config()
+        self._work_var.set(san["work_min"])
+        self._break_var.set(san["break_min"])
+        self._rounds_var.set(san["rounds"])
         return True
 
     def _on_pomo_toggle(self):

@@ -41,6 +41,7 @@ class NoteApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Simple Note")
+        self._title_cache = None
         self.root.geometry("900x600")
         self.docs = []
         self.active = None
@@ -140,7 +141,7 @@ class NoteApp:
                     notify.notify(self.root, title, msg, self._sound_cfg)
                 except Exception as exc:
                     print("warning: reminder notify error: %s" % exc, file=sys.stderr)
-            if events:
+            if any(ev["kind"] == "oneshot" for ev in events):
                 self._persist()
             self._refresh_title(now)
             if self._reminder_dlg is not None and self._reminder_dlg.winfo_exists():
@@ -155,10 +156,10 @@ class NoteApp:
 
     def _refresh_title(self, now=None):
         rem = self.scheduler.pomodoro_remaining(now)
-        if rem is None:
-            self.root.title("Simple Note")
-        else:
-            self.root.title("Simple Note — %s %s（%s）" % rem)
+        title = "Simple Note" if rem is None else "Simple Note — %s %s（%s）" % rem
+        if title != self._title_cache:
+            self._title_cache = title
+            self.root.title(title)
 
     def _persist(self):
         pomodoro, reminders = self.scheduler.to_dict()
