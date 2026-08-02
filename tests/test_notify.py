@@ -48,3 +48,15 @@ def test_resolve_sound_non_str_path_falls_back(tmp_path):
     f = tmp_path / "a.wav"
     f.write_bytes(b"RIFF")
     assert notify.resolve_sound({"mode": "custom", "path": f}) == ("system", None)
+
+
+def test_format_events_single_and_multi():
+    one = [{"kind": "daily", "title": "每日提醒", "message": "喝水"}]
+    title, msg = notify.format_events(one)
+    assert title == "每日提醒" and "喝水" in msg
+    many = [
+        {"kind": "pomodoro", "title": "工作结束", "message": "休息"},
+        {"kind": "daily", "title": "每日提醒", "message": "喝水"},
+    ]
+    title, msg = notify.format_events(many)
+    assert title == "提醒" and "工作结束" in msg and "喝水" in msg

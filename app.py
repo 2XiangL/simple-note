@@ -134,9 +134,10 @@ class NoteApp:
         try:
             now = datetime.now()
             events = self.scheduler.tick(now)
-            for ev in events:
+            if events:
+                title, msg = notify.format_events(events)
                 try:
-                    notify.notify(self.root, ev["title"], ev["message"], self._sound_cfg)
+                    notify.notify(self.root, title, msg, self._sound_cfg)
                 except Exception as exc:
                     print("warning: reminder notify error: %s" % exc, file=sys.stderr)
             if events:

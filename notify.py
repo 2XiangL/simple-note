@@ -26,6 +26,15 @@ def resolve_sound(sound_cfg):
     return ("system", None)
 
 
+def format_events(events):
+    """把一批到期事件合并为 (title, message)，供单次弹框展示。"""
+    if len(events) == 1:
+        ev = events[0]
+        return ev["title"], ev["message"]
+    lines = ["%s：%s" % (ev["title"], ev["message"]) for ev in events]
+    return "提醒", "\n".join(lines)
+
+
 def _play_sound(sound_cfg, root):
     kind, path = resolve_sound(sound_cfg)
     try:
