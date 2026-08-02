@@ -160,3 +160,57 @@ def test_switch_to_refreshes_search_dialog(tk_root):
     app._search_dlg = SimpleNamespace(winfo_exists=lambda: True, refresh=lambda: calls.append(1))
     app.switch_to(d2)
     assert calls == [1]
+
+
+def test_open_search_dialog_lift_branch(tk_root):
+    # 已存在对话框时重开：lift + focus_entry，不新建
+    from app import NoteApp
+    from search_dialog import SearchDialog
+
+    class _SpyDlg(SearchDialog):
+        def __init__(self, *a, **k):
+            self.lifted = 0
+            self.focused = 0
+            super().__init__(*a, **k)
+
+        def lift(self):
+            self.lifted += 1
+
+        def focus_entry(self):
+            self.focused += 1
+
+    app = NoteApp.__new__(NoteApp)
+    app.root = tk_root
+    app.active = None
+    app._search_dlg = None
+    real = SearchDialog
+    try:
+        import app as appmod
+        appmod.SearchDialog = _SpyDlg
+        app._open_search_dialog()
+        first = app._search_dlg
+        assert first.lifted == 0 and first.focused == 1  # 新建时只 focus
+        app._open_search_dialog()
+        assert app._search_dlg is first
+        assert first.lifted == 1 and first.focused == 2  # 重开时 lift + focus
+    finally:
+        appmod.SearchDialog = real
+
+
+def test_switch_to_without_search_dialog(tk_root):
+    # _search_dlg 为 None 或已销毁时 switch_to 不崩
+    import settings
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    app.editor_host = tk_root
+    app._line_spacing = settings.DEFAULT_LINE_SPACING
+    d1 = app._make_doc()
+    d2 = app._make_doc()
+    app.docs = [d1, d2]
+    app.active = None
+    app.panel = SimpleNamespace(select=lambda d: None)
+    app.toolbar = SimpleNamespace(set_editor=lambda e: None)
+    app._search_dlg = None
+    app.switch_to(d2)  # 不抛
+    app._search_dlg = SimpleNamespace(winfo_exists=lambda: False, refresh=lambda: None)
+    app.switch_to(d1)  # 不抛、不调用 refresh
