@@ -107,3 +107,20 @@ def test_write_to_catches_non_oserror(tmp_path, monkeypatch):
     doc = SimpleNamespace(editor=_Ed())
     assert app._write_to(doc, str(tmp_path / "x.snote")) is False
     assert shown, "保存异常未弹框"
+
+
+def test_make_doc_wires_vertical_scrollbar(tk_root):
+    # 每个文档容器内含 editor 与纵向滚动条，且二者互绑
+    import settings
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    app.editor_host = tk_root
+    app._line_spacing = settings.DEFAULT_LINE_SPACING
+    doc = app._make_doc()
+    frame = doc.frame
+    children = frame.winfo_children()
+    assert doc.editor in children
+    sbs = [c for c in children if c.winfo_class() == "TScrollbar"]
+    assert len(sbs) == 1
+    assert doc.editor.cget("yscrollcommand")  # editor -> sb.set
+    assert sbs[0].cget("command")             # sb -> editor.yview

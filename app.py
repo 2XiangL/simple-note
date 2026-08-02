@@ -5,7 +5,7 @@ import sys
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 
 import snote
 import settings
@@ -21,7 +21,8 @@ NOTE_FILTER = [("Simple Note", "*.snote"), ("所有文件", "*.*")]
 
 
 class NoteDocument:
-    def __init__(self, editor, path=None, title=None):
+    def __init__(self, frame, editor, path=None, title=None):
+        self.frame = frame
         self.editor = editor
         self.path = path
         self.title = title or (Path(path).name if path else "新建笔记")
@@ -196,15 +197,21 @@ class NoteApp:
 
     # ---- 文档生命周期 ----
     def _make_doc(self, path=None, title=None, document=None, blobs=None):
-        editor = RichTextEditor(self.editor_host)
+        frame = tk.Frame(self.editor_host)
+        editor = RichTextEditor(frame)
+        sb = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=editor.yview)
+        editor.configure(yscrollcommand=sb.set)
+        editor.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
         editor.set_line_spacing(settings.px_for_level(self._line_spacing))
-        doc = NoteDocument(editor, path=path, title=title)
+        doc = NoteDocument(frame, editor, path=path, title=title)
         editor.set_on_dirty(lambda d=doc: self._on_dirty(d))
         if document is not None:
             try:
                 editor.from_document(document, blobs or {})
             except Exception:
-                editor.destroy()  # 载入失败不泄漏孤儿编辑器控件（open_doc 兜底弹框）
+                editor.destroy()  # 先销毁子控件再销毁容器，保住孤儿控件守卫
+                frame.destroy()
                 raise
         return doc
 
@@ -282,7 +289,7 @@ class NoteApp:
         if doc.dirty and not self._confirm_save(doc):
             return
         doc.editor.end_resize()
-        doc.editor.destroy()
+        doc.frame.destroy()
         idx = self.docs.index(doc)
         self.docs.remove(doc)
         self.panel.remove(doc)
@@ -300,9 +307,9 @@ class NoteApp:
             return
         if self.active is not None:
             self.active.editor.end_resize()
-            self.active.editor.pack_forget()
+            self.active.frame.pack_forget()
         self.active = doc
-        doc.editor.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        doc.frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         doc.editor.focus_set()
         self.toolbar.set_editor(doc.editor)
         doc.editor._on_cursor_move()
