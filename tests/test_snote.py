@@ -87,9 +87,8 @@ def test_save_failure_keeps_original(tmp_path, monkeypatch):
         raise OSError("disk full")
 
     monkeypatch.setattr(json, "dumps", boom)
-    try:
+    with pytest.raises(OSError):
         snote.save_document(p, snote.build_document({}, [{"k": "text", "text": "新件"}], {}))
-    except OSError:
-        pass
     loaded, _ = snote.load_document(p)
     assert loaded["ops"][0]["text"] == "原件", "失败写入破坏了原笔记"
+    assert [f.name for f in tmp_path.iterdir()] == [p.name], "临时文件未清理"

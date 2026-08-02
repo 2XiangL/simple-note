@@ -21,7 +21,7 @@ def build_document(styles, ops, images):
 
 
 def save_document(path, document, image_blobs=None):
-    """把 document 写入 .snote(zip)，原子替换；写入失败不破坏既有文件。
+    """把 document 写入 .snote(zip)，原子替换；写入失败抛 OSError 且不破坏既有文件。
 
     image_blobs: {img_id: 原始 bytes}，仅写入 document['images'] 中引用且提供的图片。
     """

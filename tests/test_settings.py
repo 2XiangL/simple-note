@@ -1,3 +1,5 @@
+import json
+
 import settings
 
 
@@ -123,8 +125,6 @@ def test_load_settings_wrong_type_new_keys_falls_back(tmp_path):
 
 
 def test_save_failure_keeps_original(tmp_path, monkeypatch):
-    import json
-
     p = tmp_path / "s.json"
     settings.save_settings({"version": 1, "line_spacing": "宽松"}, p)
 
@@ -134,6 +134,7 @@ def test_save_failure_keeps_original(tmp_path, monkeypatch):
     monkeypatch.setattr(json, "dump", boom)  # 让写入中途失败
     settings.save_settings({"version": 1, "line_spacing": "紧凑"}, p)
     assert settings.load_settings(p)["line_spacing"] == "宽松", "失败写入破坏了原文件"
+    assert [f.name for f in tmp_path.iterdir()] == [p.name], "临时文件未清理"
 
 
 def test_save_load_roundtrip_with_new_keys(tmp_path):
