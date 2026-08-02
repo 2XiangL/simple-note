@@ -138,6 +138,34 @@ def test_insert_base_text_gets_base_tag(tk_root):
     assert ed._style_tags[tags[0]] == {}
 
 
+def test_insert_with_emoji_tags_full_range(tk_root):
+    # 程序化 insert 含 emoji 的字符串：end 取 Tk 的 insert mark（已移到插入
+    # 末尾），不按 Python 码点计数——emoji 在 Tk 索引中占多单位（本机 2 个、
+    # 部分 Tcl 8.6 构建 3 个），按码点计数会少覆盖尾部字符（"A😀B" 码点 3 个、
+    # Tk 单位 ≥4 个，旧实现漏打尾部字符标签）。
+    ed = editor.RichTextEditor(tk_root)
+    ed._current_style = {"bold": True}
+    ed.insert("end-1c", "A\U0001F600B")
+    n = int(ed.index("end-1c").split(".")[1])  # 插入后内容占用的 Tk 单位数
+    for i in range(n):
+        assert ed._style_at("1.%d" % i).get("bold") is True, i
+    assert ed._style_at("1.%d" % n) == {}
+
+
+def test_insert_after_cursor_falls_back_to_codepoint_end(tk_root):
+    # 光标在文档中部、程序化插入到末尾：Tk 不移动 insert mark，
+    # end 回退按码点计数（兼容旧行为，不越界打标）。
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("abcde")
+    ed.mark_set("insert", "1.2")
+    ed._current_style = {"bold": True}
+    ed.insert("end-1c", "XY")
+    assert ed._style_at("1.5").get("bold") is True
+    assert ed._style_at("1.6").get("bold") is True
+    assert ed._style_at("1.7") == {}
+    assert ed._style_at("1.2") == {}  # 光标前的既有文本未被误标
+
+
 def test_apply_style_no_selection_sets_current_style(tk_root):
     calls = []
     ed = editor.RichTextEditor(tk_root)

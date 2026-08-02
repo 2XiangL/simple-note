@@ -113,6 +113,9 @@ class RichTextEditor(tk.Text):
         # 默认 <KeyPress> 类绑定走 Tcl 层 insert，绕过下面的 Python insert()。
         # 这里在打字前记录光标，由排在类绑定之后的晚绑定 _stamp_typed_range 把当前
         # 样式套到刚输入的范围（发生在同一 KeyPress 事件内、重绘之前）。
+        # 已知限制：event.state & 0x4（Ctrl 位）启发式在需 AltGr 的布局（如德语
+        # QWERTZ，AltGr 组合键同样置位 Ctrl 位）下会漏打标签；本机为中文美式键盘
+        # 布局（LCID 00000804）无需 AltGr，暂不改逻辑，改需真实 AltGr 布局验证。
         if event.char and not (event.state & 0x4):
             self._type_start = self.index("insert")
         else:
@@ -189,7 +192,14 @@ class RichTextEditor(tk.Text):
             self._mark_dirty()
             return
         tag = self._get_or_create_tag(self._current_style)
-        end = self.index("%s +%dc" % (start, len(chars)))
+        end = self.index("insert")
+        if self.compare(end, "<=", start):
+            # 插入点位于光标之后时 Tk 不移动 insert mark，end 取不到插入末尾
+            # （该场景无现成调用方，按码点回退计数保留旧行为）。
+            # 光标/末尾插入时 insert mark 已移到内容末尾：用 Tk 索引作 end，
+            # emoji 等按多单位计数的增补字符尾部不会再漏打标签（旧实现按
+            # Python 码点计数，emoji 占 3 个 Tk 单位时尾部字符无标签）。
+            end = self.index("%s +%dc" % (start, len(chars)))
         self.tag_add(tag, start, end)
         self._pending = False
         self._mark_dirty()
