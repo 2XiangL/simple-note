@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
 
+import pytest
+
 import reminder
 from reminder import ReminderScheduler
 
@@ -25,6 +27,71 @@ def test_remove():
     s.remove(e["id"])
     _, daily = s.list_reminders()
     assert daily == []
+
+
+def test_add_daily_rejects_out_of_range():
+    s = ReminderScheduler()
+    with pytest.raises(ValueError):
+        s.add_daily("x", 99, 0)
+    with pytest.raises(ValueError):
+        s.add_daily("x", 8, 60)
+    with pytest.raises(ValueError):
+        s.add_daily("x", -1, 0)
+    with pytest.raises(ValueError):
+        s.add_daily("x", "abc", 0)
+    with pytest.raises(ValueError):
+        s.add_daily("", 8, 0)
+    with pytest.raises(ValueError):
+        s.add_daily("  ", 8, 0)
+    with pytest.raises(ValueError):
+        s.add_daily(123, 8, 0)
+    _, daily = s.list_reminders()
+    assert daily == []   # 非法输入不产生残留
+
+
+def test_add_daily_accepts_numeric_strings():
+    s = ReminderScheduler()
+    s.add_daily("喝水", "8", "0")   # 与加载器 int() 行为一致
+    _, daily = s.list_reminders()
+    assert daily[0]["hour"] == 8 and daily[0]["minute"] == 0
+
+
+def test_add_oneshot_rejects_nondatetime():
+    s = ReminderScheduler()
+    with pytest.raises(ValueError):
+        s.add_oneshot("x", "tomorrow")
+    with pytest.raises(ValueError):
+        s.add_oneshot("x", None)
+    with pytest.raises(ValueError):
+        s.add_oneshot("", datetime(2026, 8, 2, 20, 0))
+    _, oneshot = s.list_reminders()
+    assert oneshot == []   # 非法输入不产生残留
+
+
+def test_load_dict_dedupes_ids():
+    s = ReminderScheduler()
+    dup = {"daily": [
+        {"id": "a", "label": "一", "hour": 9, "minute": 0},
+        {"id": "a", "label": "二", "hour": 10, "minute": 0},
+    ]}
+    s.load_dict(None, dup)
+    _, daily = s.list_reminders()
+    assert len(daily) == 1, "重复 ID 未去重"
+    assert daily[0]["label"] == "一"   # 保留先出现者
+
+
+def test_load_dict_dedupes_across_oneshot_and_daily():
+    s = ReminderScheduler()
+    s.load_dict(
+        None,
+        {
+            "oneshot": [{"id": "a", "label": "一次性", "when": "2026-08-02T20:00:00"}],
+            "daily": [{"id": "a", "label": "每日", "hour": 8, "minute": 0}],
+        },
+    )
+    oneshot, daily = s.list_reminders()
+    assert len(oneshot) == 1 and oneshot[0]["label"] == "一次性"
+    assert daily == []   # 同 id 在两类中各一条时保留先出现者（oneshot）
 
 
 def test_to_load_roundtrip():

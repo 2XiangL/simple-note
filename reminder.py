@@ -91,19 +91,22 @@ class ReminderScheduler:
     def load_dict(self, pomodoro, reminders):
         self._pomodoro = sanitize_pomodoro(pomodoro)
         reminders = reminders if isinstance(reminders, dict) else {}
+        seen = set()
         self._oneshot = []
         raw_os = reminders.get("oneshot")
         if isinstance(raw_os, list):
             for e in raw_os:
                 s = _sanitize_oneshot(e)
-                if s is not None and not s["fired"]:
+                if s is not None and not s["fired"] and s["id"] not in seen:
+                    seen.add(s["id"])
                     self._oneshot.append(s)
         self._daily = []
         raw_daily = reminders.get("daily")
         if isinstance(raw_daily, list):
             for e in raw_daily:
                 s = _sanitize_daily(e)
-                if s is not None:
+                if s is not None and s["id"] not in seen:
+                    seen.add(s["id"])
                     self._daily.append(s)
 
     def to_dict(self):
@@ -120,14 +123,26 @@ class ReminderScheduler:
         self._pomodoro = sanitize_pomodoro(cfg)
 
     def add_oneshot(self, label, when):
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError("label 必须为非空字符串")
+        if not isinstance(when, datetime):
+            raise ValueError("when 必须为 datetime")
         if when.tzinfo is not None:
             when = when.replace(tzinfo=None)
-        entry = {"id": _new_id(), "label": label, "when": when.isoformat(), "fired": False}
+        entry = {"id": _new_id(), "label": label.strip(), "when": when.isoformat(), "fired": False}
         self._oneshot.append(entry)
         return entry
 
     def add_daily(self, label, hour, minute):
-        entry = {"id": _new_id(), "label": label, "hour": hour, "minute": minute}
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError("label 必须为非空字符串")
+        try:
+            hour, minute = int(hour), int(minute)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("hour/minute 必须为整数")
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError("hour/minute 超出范围")
+        entry = {"id": _new_id(), "label": label.strip(), "hour": hour, "minute": minute}
         self._daily.append(entry)
         return entry
 
