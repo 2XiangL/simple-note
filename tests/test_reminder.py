@@ -365,3 +365,20 @@ def test_tick_before_arm_daily_still_works():
     assert evs == []
     evs = s.tick(datetime(2026, 1, 1, 9, 0, 30))
     assert any(e["kind"] == "daily" for e in evs), "未显式 arm 时每日提醒应仍可用"
+
+
+def test_oneshot_tzaware_when_does_not_crash_tick():
+    s = ReminderScheduler()
+    s._oneshot = [{"id": "z", "label": "带时区", "when": "2026-01-01T00:00:00+08:00", "fired": False}]
+    evs = s.tick(datetime(2026, 1, 1, 0, 0, 0))   # naive now 与 aware when 比较会 TypeError
+    assert evs == [], "aware when 不应中断 tick"
+    assert s._oneshot == [], "aware when 条目应被丢弃"
+
+
+def test_tick_lazy_arm_baseline_set_before_subtick_runs():
+    s = ReminderScheduler()
+    seen = []
+    orig = s._tick_daily
+    s._tick_daily = lambda now: (seen.append(s._last_tick), orig(now))[1]
+    s.tick(datetime(2026, 1, 1, 8, 0))
+    assert seen == [datetime(2026, 1, 1, 8, 0)]   # 旧实现此处为 [None] → 红

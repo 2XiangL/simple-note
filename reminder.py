@@ -229,9 +229,12 @@ class ReminderScheduler:
             try:
                 when = datetime.fromisoformat(e["when"])
                 label = e["label"]
+                due = now >= when
             except (ValueError, TypeError, KeyError):
+                # 损坏条目（不可解析 / 缺键 / 带时区）直接丢弃，不再出现在 to_dict 输出，
+                # 与 fired 条目的移除生命周期一致，非数据丢失
                 continue
-            if now >= when:
+            if due:
                 events.append({"kind": "oneshot", "title": "提醒", "message": label})
             else:
                 remaining.append(e)
