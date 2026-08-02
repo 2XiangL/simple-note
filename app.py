@@ -193,7 +193,7 @@ class NoteApp:
         )
 
     def _open_search_dialog(self):
-        if getattr(self, "_search_dlg", None) is not None and self._search_dlg.winfo_exists():
+        if self._search_dlg is not None and self._search_dlg.winfo_exists():
             self._search_dlg.lift()
             self._search_dlg.focus_entry()
             return

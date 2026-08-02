@@ -132,6 +132,7 @@ def test_open_search_dialog_singleton(tk_root):
     app = NoteApp.__new__(NoteApp)
     app.root = tk_root
     app.active = None
+    app._search_dlg = None
     app._open_search_dialog()
     first = app._search_dlg
     assert first is not None and first.winfo_exists()
