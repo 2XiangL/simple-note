@@ -220,3 +220,41 @@ def test_daily_sleep_wake_catchup_fires_once():
     s.tick(datetime(2026, 8, 2, 7, 30))
     ev = s.tick(datetime(2026, 8, 2, 9, 0))           # 休眠后唤醒，已过 8 点
     assert len(ev) == 1 and ev[0]["message"] == "喝水"
+
+
+def test_add_oneshot_tzaware_normalized_to_naive():
+    from datetime import timezone
+    s = ReminderScheduler()
+    aware = datetime(2026, 8, 2, 20, 0, tzinfo=timezone(timedelta(hours=8)))
+    s.add_oneshot("开会", aware)
+    e = s.list_reminders()[0][0]
+    assert e["when"] == "2026-08-02T20:00:00"   # 已归一化为 naive，不含偏移
+
+
+def test_add_oneshot_tzaware_still_fires():
+    from datetime import timezone
+    s = ReminderScheduler()
+    aware = datetime(2026, 8, 2, 20, 0, tzinfo=timezone(timedelta(hours=8)))
+    s.add_oneshot("开会", aware)
+    s.arm(datetime(2026, 8, 2, 19, 0))
+    ev = s.tick(datetime(2026, 8, 2, 20, 0))
+    assert len(ev) == 1 and ev[0]["message"] == "开会"
+
+
+def test_multiple_due_events_in_one_tick():
+    s = ReminderScheduler()
+    s.add_daily("喝水", 8, 0)
+    s.add_oneshot("开会", datetime(2026, 8, 2, 8, 0))
+    s.arm(datetime(2026, 8, 2, 7, 0))
+    ev = s.tick(datetime(2026, 8, 2, 8, 0))
+    kinds = sorted(e["kind"] for e in ev)
+    assert kinds == ["daily", "oneshot"]
+    assert s.list_reminders()[0] == []   # oneshot 已被移除
+
+
+def test_corrupt_entry_in_memory_does_not_crash_tick():
+    s = ReminderScheduler()
+    s._oneshot = [{"id": "x", "label": "坏", "when": "不是日期"}]
+    s._daily = [{"id": "y", "label": "坏", "hour": 99, "minute": 0}]
+    s.arm(datetime(2026, 8, 2, 7, 0))
+    assert s.tick(datetime(2026, 8, 2, 8, 0)) == []   # 不抛，也不触发

@@ -117,6 +117,8 @@ class ReminderScheduler:
         self._pomodoro = sanitize_pomodoro(cfg)
 
     def add_oneshot(self, label, when):
+        if when.tzinfo is not None:
+            when = when.replace(tzinfo=None)
         entry = {"id": _new_id(), "label": label, "when": when.isoformat(), "fired": False}
         self._oneshot.append(entry)
         return entry
