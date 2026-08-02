@@ -7,6 +7,10 @@ from tkinter import filedialog, messagebox, ttk
 import notify
 
 
+def _valid_hhmm(hour, minute):
+    return 0 <= hour <= 23 and 0 <= minute <= 59
+
+
 class ReminderDialog(tk.Toplevel):
     def __init__(self, master, scheduler, sound_cfg, on_change):
         super().__init__(master)
@@ -130,6 +134,9 @@ class ReminderDialog(tk.Toplevel):
             minute = self._minute_var.get()
         except tk.TclError:
             messagebox.showwarning("新增提醒", "时间格式不正确。", parent=self)
+            return
+        if not _valid_hhmm(hour, minute):
+            messagebox.showwarning("新增提醒", "时间超出范围（时 0–23，分 0–59）。", parent=self)
             return
         if self._type_var.get() == "daily":
             self._scheduler.add_daily(label, hour, minute)

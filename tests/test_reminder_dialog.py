@@ -1,5 +1,13 @@
 import reminder
-from reminder_dialog import ReminderDialog
+from reminder_dialog import ReminderDialog, _valid_hhmm
+
+
+def test_valid_hhmm_ranges():
+    assert _valid_hhmm(0, 0) is True
+    assert _valid_hhmm(23, 59) is True
+    assert _valid_hhmm(24, 0) is False
+    assert _valid_hhmm(0, 60) is False
+    assert _valid_hhmm(-1, 0) is False
 
 
 def test_dialog_lists_and_deletes(tk_root):
