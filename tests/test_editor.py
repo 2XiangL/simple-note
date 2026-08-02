@@ -377,3 +377,18 @@ def test_paste_over_selection_is_tagged(tk_root):
     assert tags, "粘贴覆盖选区后文本未打标签"
     tags2 = [t for t in ed.tag_names("1.3") if t in ed._style_tags]
     assert tags2, "粘贴覆盖选区后第二个字符未打标签"
+
+
+def test_undo_marks_dirty(tk_root):
+    # 撤销走 Tcl 级 edit undo（Ctrl+Z 经 <<Undo>> 类绑定同路径；event_generate
+    # "<Control-z>" 不做 keymap 翻译、不会执行撤销）。先 update 派发插入产生的
+    # <<Modified>>（真实 mainloop 行为），否则残留事件先于撤销生效、断言失真。
+    from editor import RichTextEditor
+    ed = RichTextEditor(tk_root)
+    ed.insert("end", "abc")
+    tk_root.update()
+    seen = []
+    ed.set_on_dirty(lambda: seen.append(1))
+    ed.tk.call(ed._w, "edit", "undo")
+    tk_root.update()
+    assert seen, "撤销未触发 dirty"

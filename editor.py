@@ -23,7 +23,6 @@ class RichTextEditor(tk.Text):
         self._on_cursor_style = None
         self._loading = False
         self._on_dirty = None
-        self._suppress_modified = 0
         self._resizer = None
         self._ime_style = None        # 上次成功同步给输入法的样式
         self._default_family = None   # 惰性解析：命名字体 -> 真实 family
@@ -32,6 +31,8 @@ class RichTextEditor(tk.Text):
         self.bind("<KeyRelease>", self._on_cursor_move, add="+")
         self.bind("<ButtonRelease-1>", self._on_cursor_move, add="+")
         self.bind("<Control-v>", self._on_paste, add="+")
+        # 依赖 Tk 8.6 语义：Ctrl+V 不合成 <<Paste>>，双绑定才安全；升级 Tk 9 后
+        # Ctrl+V 会自动合成粘贴虚拟事件，_on_paste 会跑两次（二次插入=双份粘贴），需防重入。
         # 菜单/程序化粘贴走 <<Paste>> 虚拟事件，同样拦截：先处理剪贴板图片，
         # 文本粘贴则记录光标待晚绑定补打标签（class 绑定插字发生在晚绑定之前）。
         self.bind("<<Paste>>", self._on_paste, add="+")
@@ -65,16 +66,9 @@ class RichTextEditor(tk.Text):
         if not self.edit_modified():
             return
         self.edit_modified(False)
-        if self._suppress_modified or self._loading:
+        if self._loading:
             return
         self._mark_dirty()
-
-    def _drain_modified(self):
-        # <<Modified>> 虚拟事件由 Tk 异步入队，update idletasks 不派发事件队列；
-        # 这里在确有未处理 modified 事件时用 update() 排空，仅供 from_document
-        # 清栈使用（_on_modified 复位标志后即完成）。
-        if self.edit_modified():
-            self.tk.call("update")
 
     def destroy(self):
         # 清理实例级晚绑定标签，避免绑定表泄漏
@@ -344,14 +338,9 @@ class RichTextEditor(tk.Text):
         self._pending = False
         self._sync_widget_font()
         self._sync_ime_font()
-        # 排空载入期间积压的 <<Modified>> 虚拟事件（在 _loading 复位后才派发，
-        # 否则会把刚载入的文档误标为脏），随后复位 undo 栈与 modified 标志，
-        # 保证载入后首次编辑才触发脏回调。
-        self._suppress_modified += 1
-        try:
-            self._drain_modified()
-        finally:
-            self._suppress_modified -= 1
+        # 复位 undo 栈与 modified 标志：载入期间积压的 <<Modified>> 事件稍后派发时
+        # 标志已是 False，_on_modified 会早退，不会把刚载入的文档误标为脏；
+        # 载入后首次编辑（0→1）仍正常触发。
         self.edit_reset()
         self.edit_modified(False)
 
