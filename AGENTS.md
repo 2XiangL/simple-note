@@ -9,6 +9,7 @@ Simple Note is a Tkinter desktop app managed with **uv** (see `uv.lock`).
 - Run the app: `uv run python main.py`
 - Run tests: `uv run pytest`
 - Run a single test: `uv run pytest tests/test_util.py::test_merge_style_overwrites_and_sets`
+- Package a Windows exe: `pyinstaller SimpleNote.spec` → `dist/SimpleNote.exe` (windowed, no console). `pyinstaller` is **not** a declared dependency — install it separately. `build/` and `dist/` are gitignored build artifacts; never edit them.
 
 `pyproject.toml` sets `tool.pytest.ini_options.pythonpath = ["."]`, so modules at the repo root (`app`, `editor`, `snote`, `util`, ...) are imported directly — there is no package directory.
 
