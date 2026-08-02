@@ -18,6 +18,7 @@ class RichTextEditor(tk.Text):
         self._style_tags = {}        # tag id -> style dict
         self._style_tag_lookup = {}  # 样式键(tuple(sorted(style.items()))) -> tag id，O(1) 反查
         self._images = {}            # img id -> {source, photo, width, height}
+        self._image_encoded = {}     # img id -> PNG bytes（源图编码缓存）
         self._style_counter = 0
         self._image_counter = 0
         self._current_style = {}
@@ -336,9 +337,15 @@ class RichTextEditor(tk.Text):
         for img_id, m in self._images.items():
             if img_id not in used:
                 continue
+            cached = self._image_encoded.get(img_id)
+            if cached is not None:
+                blobs[img_id] = cached
+                continue
             buf = io.BytesIO()
             m["source"].save(buf, format="PNG")
-            blobs[img_id] = buf.getvalue()
+            cached = buf.getvalue()
+            self._image_encoded[img_id] = cached
+            blobs[img_id] = cached
         return blobs
 
     def from_document(self, document, image_blobs):
@@ -353,6 +360,7 @@ class RichTextEditor(tk.Text):
         self._style_tags.clear()
         self._style_tag_lookup.clear()
         self._images.clear()
+        self._image_encoded.clear()
         self._style_counter = 0
         self._image_counter = 0
 
@@ -384,6 +392,7 @@ class RichTextEditor(tk.Text):
                     w, h = source.size
             photo = self._make_photo(source, w, h)
             self._images[img_id] = {"source": source, "photo": photo, "width": w, "height": h}
+            # 编码缓存留待首次 get_image_blobs 时生成（载入不做无用功）
             num = img_id[3:] if img_id.startswith("img") and img_id[3:].isdigit() else "0"
             max_i = max(max_i, int(num))
         self._image_counter = max_i
@@ -485,6 +494,7 @@ class RichTextEditor(tk.Text):
             return
         self.delete(idx)
         self._images.pop(img_id, None)
+        self._image_encoded.pop(img_id, None)
         self._mark_dirty()
 
     # ---- 事件 ----
@@ -503,8 +513,11 @@ class RichTextEditor(tk.Text):
 
     def _on_double_click(self, event):
         idx = self.index("@%d,%d" % (event.x, event.y))
-        for kind, value, index in self.dump("1.0", "end", image=True, text=False, tag=False):
-            if kind == "image" and self.compare(index, "==", idx):
+        # 局部 dump：只判断点击位置这一个字符是否为图片（图片占单个 Tk 字符位），
+        # 免去全文扫描；命中时 dump 返回的 value 即 img_id。与全文版本语义一致：
+        # 均为「@x,y 命中图片字符位」才进入缩放。
+        for kind, value, _index in self.dump(idx, "%s +1c" % idx, image=True, text=False, tag=False):
+            if kind == "image":
                 self.begin_resize(value)
                 return "break"
 

@@ -511,3 +511,101 @@ def test_style_tag_lookup_synced_after_from_document(tk_root):
     assert ed2._style_tags[t] == {"bold": True}
     assert len(ed2._style_tags) == n
     assert len(ed2._style_tags) == len(ed2._style_tag_lookup)
+
+
+# ---- 图片编码缓存 + 双击局部定位 ----
+
+def test_get_image_blobs_caches_encoding(tk_root):
+    from PIL import Image as PILImage
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    img = PILImage.new("RGBA", (40, 30), (255, 0, 0, 255))
+    img_id = ed.insert_image(img, max_width=20)
+    assert img_id not in ed._image_encoded  # 首次保存前不预编码
+    blobs1 = ed.get_image_blobs()
+    assert img_id in ed._image_encoded
+    assert ed._image_encoded[img_id] == blobs1[img_id]
+    blobs2 = ed.get_image_blobs()
+    assert blobs2 == blobs1
+    assert blobs2[img_id] is blobs1[img_id]  # 二次调用命中缓存，同一字节对象
+
+
+def test_image_encoding_cache_invalidated_on_reload(tk_root):
+    import io
+    from PIL import Image as PILImage
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    img = PILImage.new("RGBA", (40, 30), (255, 0, 0, 255))
+    img_id = ed.insert_image(img)
+    blobs = ed.get_image_blobs()
+    assert ed._image_encoded.get(img_id) is not None
+    doc = ed.to_document()
+    ed2 = editor.RichTextEditor(tk_root)
+    ed2.from_document(doc, blobs)
+    assert img_id in ed2._images
+    assert img_id not in ed2._image_encoded  # 载入不预编码，首次保存时才编码
+    b2 = ed2.get_image_blobs()
+    assert PILImage.open(io.BytesIO(b2[img_id])).size == (40, 30)
+    assert ed2._image_encoded.get(img_id) is not None
+
+
+def test_delete_image_clears_encoding_cache(tk_root):
+    from PIL import Image as PILImage
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    img_id = ed.insert_image(PILImage.new("RGBA", (20, 20), (0, 0, 0, 255)))
+    ed.get_image_blobs()
+    assert img_id in ed._image_encoded
+    ed.delete_image(img_id)
+    assert img_id not in ed._image_encoded
+
+
+class _FakeClick:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+
+def test_double_click_on_image_starts_resize(tk_root):
+    # 双击图片：局部 dump（点击处 +1c）命中图片，以 img_id 进入缩放
+    import tkinter as tk
+    from PIL import Image as PILImage
+    top = tk.Toplevel(tk_root)
+    ed = editor.RichTextEditor(top)
+    ed.pack()
+    tk_root.update()
+    try:
+        ed.insert_plain("ab")
+        img_id = ed.insert_image(PILImage.new("RGBA", (40, 30), (255, 0, 0, 255)))
+        idx = ed._index_of_image(img_id)
+        bbox = ed.bbox(idx)
+        assert bbox is not None
+        clicked = []
+        ed.begin_resize = lambda i: clicked.append(i)
+        result = ed._on_double_click(_FakeClick(bbox[0] + 1, bbox[1] + 1))
+        assert result == "break"
+        assert clicked == [img_id]
+    finally:
+        top.destroy()
+
+
+def test_double_click_on_text_does_not_resize(tk_root):
+    # 双击正文：局部 dump 无图片事件，不进入缩放、不拦截默认行为
+    import tkinter as tk
+    from PIL import Image as PILImage
+    top = tk.Toplevel(tk_root)
+    ed = editor.RichTextEditor(top)
+    ed.pack()
+    tk_root.update()
+    try:
+        ed.insert_plain("ab")
+        ed.insert_image(PILImage.new("RGBA", (40, 30), (255, 0, 0, 255)))
+        bbox = ed.bbox("1.0")
+        assert bbox is not None
+        clicked = []
+        ed.begin_resize = lambda i: clicked.append(i)
+        result = ed._on_double_click(_FakeClick(bbox[0] + 1, bbox[1] + 1))
+        assert result is None
+        assert clicked == []
+    finally:
+        top.destroy()
