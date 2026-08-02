@@ -828,3 +828,13 @@ def test_search_highlight_not_serialized(tk_root):
     doc = ed.to_document()
     assert "search_all" not in str(doc)
     assert "search_cur" not in str(doc)
+
+
+def test_search_jump_syncs_current_style(tk_root):
+    # 查找跳转移动光标后，_current_style 跟随光标处样式（续写样式/工具栏同步）
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("aa bb aa")
+    ed._apply_delta_range("1.3", "1.5", {"size": 30})  # "aa bb aa" 中 "bb" 占 1.3-1.5
+    ed.search_next("bb", case=True)  # 光标跳入 1.3-1.5 的 size:30 区域
+    assert ed._current_style.get("size") == 30
+    assert ed._style_at(ed.index("insert")).get("size") == 30

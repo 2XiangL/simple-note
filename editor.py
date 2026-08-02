@@ -123,10 +123,15 @@ class RichTextEditor(tk.Text):
         else:
             self._type_start = None
 
-    def _on_cursor_move(self, _event=None):
+    def _on_cursor_move(self, _event=None, style_index=None):
+        # style_index：非 None 时直接从该索引取续写样式（查找跳转用，光标落在
+        # 匹配起点，续写样式取匹配文本自身而非其前一字符）
         if not self._pending:
-            before = self.index("insert -1c")
-            self._current_style = self._style_at(before)
+            if style_index is not None:
+                self._current_style = self._style_at(style_index)
+            else:
+                before = self.index("insert -1c")
+                self._current_style = self._style_at(before)
         self._sync_widget_font()
         self._sync_ime_font()
         if self._on_cursor_style:
@@ -242,6 +247,7 @@ class RichTextEditor(tk.Text):
             if self.compare(s, "==", start):
                 current = i + 1
                 break
+        self._on_cursor_move(style_index=start)  # 跳转后同步 _current_style（续写样式/工具栏/IME）
         return (current, len(matches))
 
     def highlight_search(self, pattern, case, current_start=None):
