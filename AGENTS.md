@@ -17,8 +17,8 @@ There is **no lint, formatter, or typecheck** configured. Do not assume ruff/myp
 ## Environment gotchas
 
 - Requires **Python 3.14** (`.python-version`, `pyproject.toml`). Let `uv` resolve it.
-- Pillow is the only runtime dep. `main.py` probes for it at startup and warns if missing.
-- Tests instantiate real Tk widgets. The `tk_root` fixture (see `tests/conftest.py`) calls `pytest.skip(...)` when no display is available — on a headless session most of `tests/test_editor.py` silently skips. Always check the "skipped" count, not just pass/fail.
+- Runtime deps are **Pillow** and **pystray** (see `pyproject.toml`). `main.py` probes for Pillow at startup and warns if missing; `pystray` is imported lazily inside `tray.py` so a missing/broken tray never crashes startup.
+- Tests instantiate real Tk widgets. The `tk_root` fixture (see `tests/conftest.py`) calls `pytest.skip(...)` when no display is available — on a headless session most of `tests/test_editor.py` silently skips. Always check the "skipped" count, not just pass/fail. `test_util`, `test_snote`, `test_settings`, and `test_tray` are headless-safe (no real Tk — `test_tray` drives a `_FakeRoot`); only `test_editor` needs a display.
 - `image_resizer.py` uses the Windows-only `-transparentcolor` attribute and falls back to an opaque overlay on other platforms (caught `tk.TclError`). Don't "fix" that try/except.
 
 ## Architecture
@@ -32,6 +32,8 @@ Entry point is `main.py` → `app.NoteApp` (main window, menus, multi-document c
 - `util.py` — pure style helpers (`merge_style`, `style_to_font`, `style_to_tag_config`) and clipboard image grab. No Tk state; safe to unit-test directly.
 - `toolbar.py`, `notes_panel.py`, `image_resizer.py` — UI components wired up by `NoteApp`.
 - `imefont.py` — Windows-only IME composition-font sync. `RichTextEditor._sync_ime_font` calls `imefont.set_composition_font` whenever `_current_style` changes (cursor move / style apply / doc load / `<FocusIn>`) so the Chinese-IME preedit/candidate window matches the surrounding font instead of the widget base font. No-op on non-Windows. The visual result can't be unit-tested headlessly — it needs a real Windows IME session.
+- `tray.py` — `TrayController`: pystray tray icon + global hotkey Ctrl+Alt+N (Windows-only, via Win32 `RegisterHotKey` pumped on its own thread). **Tkinter is not thread-safe**: the hotkey-listener thread and pystray menu callbacks must NEVER call Tk directly — they only `_marshal` (enqueue); the main thread drains the queue via `root.after` polling (`_poll`/`_drain`). Tray/hotkey failures are caught and never block app startup (a busy hotkey only prints a warning). Preserve this queue+poll pattern when editing tray logic.
+- `settings.py` — pure-function read/write of app prefs (line-spacing level), no Tk dep, at `~/.simple-note/settings.json`. `load_settings`/`save_settings` are **fault-tolerant and never raise** (missing/corrupt/wrong-type/unknown-level all fall back to defaults, warning to stderr). Preset map `LINE_SPACING_PRESETS` (紧凑=0 / 标准=4 / 宽松=8 px) is applied via the `app.NoteApp` view menu → `editor.set_line_spacing(px)` and persisted.
 
 Images are stored **losslessly**: the original `PIL.Image` source is kept in memory and re-encoded at original resolution on save; only the on-screen display is resized. Do not save the resized photo in place of the source.
 
@@ -39,4 +41,4 @@ Images are stored **losslessly**: the original `PIL.Image` source is kept in mem
 
 - UI strings and code docstrings are written in **Simplified Chinese**. Match this when adding user-facing text or docstrings.
 - `_apply_delta_range` / `insert` / `to_document` / `from_document` form the serialization boundary; `to_document()` then `from_document()` must round-trip equal (see `test_roundtrip_*`). Keep them in sync.
-- `.opencode/` and `docs/superpowers/` are OpenCode tooling, not part of the application.
+- `.opencode/` is OpenCode tooling, not part of the application.
