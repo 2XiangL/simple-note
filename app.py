@@ -1,13 +1,18 @@
 """NoteApp：主窗口、菜单、多文档协调。"""
 
 import os
+import sys
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
 import snote
 import settings
+import notify
 from editor import RichTextEditor
+from reminder import ReminderScheduler
+from reminder_dialog import ReminderDialog
 from tray import TrayController
 from notes_panel import NotesPanel
 from toolbar import FormatToolbar
@@ -44,6 +49,12 @@ class NoteApp:
         self._line_spacing = self.settings.get("line_spacing", settings.DEFAULT_LINE_SPACING)
         self._ls_var = tk.StringVar(value=self._line_spacing)
 
+        self.scheduler = ReminderScheduler()
+        self.scheduler.load_dict(self.settings.get("pomodoro"), self.settings.get("reminders"))
+        self._sound_cfg = self.settings.get("sound") or dict(settings.DEFAULT_SOUND)
+        self._reminder_dlg = None
+        self.scheduler.arm(datetime.now())
+
         self._build_menu()
         self.toolbar = FormatToolbar(root)
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
@@ -71,6 +82,8 @@ class NoteApp:
         self.tray.start()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        self._tick()
+
     # ---- 菜单 ----
     def _build_menu(self):
         menubar = tk.Menu(self.root)
@@ -91,6 +104,13 @@ class NoteApp:
             )
         menubar.add_cascade(label="查看", menu=view_menu)
 
+        remind_menu = tk.Menu(menubar, tearoff=0)
+        remind_menu.add_command(label="管理提醒...", command=self._open_reminder_dialog)
+        remind_menu.add_separator()
+        remind_menu.add_command(label="开始番茄钟", command=self._start_pomodoro)
+        remind_menu.add_command(label="停止番茄钟", command=self._stop_pomodoro)
+        menubar.add_cascade(label="提醒", menu=remind_menu)
+
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="关于程序", command=self.about)
         menubar.add_cascade(label="关于", menu=help_menu)
@@ -108,6 +128,59 @@ class NoteApp:
             doc.editor.set_line_spacing(px)
         self.settings["line_spacing"] = level
         settings.save_settings(self.settings)
+
+    # ---- 提醒 ----
+    def _tick(self):
+        try:
+            now = datetime.now()
+            events = self.scheduler.tick(now)
+            for ev in events:
+                notify.notify(self.root, ev["title"], ev["message"], self._sound_cfg)
+            if events:
+                self._persist()
+            self._refresh_title(now)
+            if self._reminder_dlg is not None and self._reminder_dlg.winfo_exists():
+                self._reminder_dlg.refresh_list()
+        except Exception as exc:
+            print("warning: reminder tick error: %s" % exc, file=sys.stderr)
+        finally:
+            self.root.after(1000, self._tick)
+
+    def _refresh_title(self, now=None):
+        rem = self.scheduler.pomodoro_remaining(now)
+        if rem is None:
+            self.root.title("Simple Note")
+        else:
+            self.root.title("Simple Note — %s %s（%s）" % rem)
+
+    def _persist(self):
+        pomodoro, reminders = self.scheduler.to_dict()
+        self.settings["pomodoro"] = pomodoro
+        self.settings["reminders"] = reminders
+        if self._reminder_dlg is not None and self._reminder_dlg.winfo_exists():
+            self._sound_cfg = self._reminder_dlg.sound_config()
+        self.settings["sound"] = self._sound_cfg
+        settings.save_settings(self.settings)
+
+    def _on_reminder_change(self):
+        self._persist()
+        self._refresh_title()
+
+    def _open_reminder_dialog(self):
+        if self._reminder_dlg is not None and self._reminder_dlg.winfo_exists():
+            self._reminder_dlg.lift()
+            return
+        self._reminder_dlg = ReminderDialog(
+            self.root, self.scheduler, self._sound_cfg, on_change=self._on_reminder_change
+        )
+
+    def _start_pomodoro(self):
+        self.scheduler.start_pomodoro(datetime.now())
+        self._refresh_title()
+
+    def _stop_pomodoro(self):
+        self.scheduler.stop_pomodoro()
+        self._refresh_title()
 
     # ---- 文档生命周期 ----
     def _make_doc(self, path=None, title=None, document=None, blobs=None):
@@ -242,6 +315,7 @@ class NoteApp:
                 self.switch_to(doc)
                 if not self._confirm_save(doc):
                     return
+        self._persist()
         self.tray.stop()
         self.root.destroy()
 
