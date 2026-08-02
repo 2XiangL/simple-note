@@ -197,6 +197,7 @@ class RichTextEditor(tk.Text):
             pos = self.search(pattern, pos, stopindex=tk.END, nocase=not case)
             if not pos:
                 return matches
+            # +Nc 计数依赖 Tk 归一化为整字符（同 insert() 处理 emoji 的算法），勿改成字符计数
             end = self.index("%s+%dc" % (pos, len(pattern)))
             matches.append((pos, end))
             pos = end
@@ -235,8 +236,7 @@ class RichTextEditor(tk.Text):
         self.tag_remove("sel", "1.0", tk.END)
         self.tag_add("sel", start, end)
         self.see(start)
-        self.highlight_search(pattern, case, start)
-        matches = self.find_matches(pattern, case)
+        matches = self.highlight_search(pattern, case, start)
         current = 0
         for i, (s, _e) in enumerate(matches):
             if self.compare(s, "==", start):
@@ -245,15 +245,17 @@ class RichTextEditor(tk.Text):
         return (current, len(matches))
 
     def highlight_search(self, pattern, case, current_start=None):
-        """刷新查找底纹：search_all 覆盖全部匹配，search_cur 覆盖当前匹配。"""
+        """刷新查找底纹：search_all 覆盖全部匹配，search_cur 覆盖当前匹配；返回匹配列表。"""
         self.tag_remove("search_all", "1.0", tk.END)
         self.tag_remove("search_cur", "1.0", tk.END)
-        for s, e in self.find_matches(pattern, case):
+        matches = self.find_matches(pattern, case)
+        for s, e in matches:
             self.tag_add("search_all", s, e)
         if current_start is not None:
             self.tag_add("search_cur", current_start, "%s+%dc" % (current_start, len(pattern)))
         self.tag_raise("search_all")
         self.tag_raise("search_cur")  # 后 raise 优先级更高：当前匹配盖住全部匹配
+        return matches
 
     def clear_search_highlight(self):
         """移除全部查找底纹。"""

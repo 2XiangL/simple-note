@@ -807,3 +807,24 @@ def test_search_highlights_and_clear(tk_root):
     ed.clear_search_highlight()
     assert not ed.tag_ranges("search_all")
     assert not ed.tag_ranges("search_cur")
+
+
+def test_highlight_refreshes_on_pattern_change(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("a x b x c")
+    ed.search_next("a", case=True)
+    ed.search_next("x", case=True)
+    # 旧 pattern 的底纹被移除，新 pattern 的两处匹配有底纹
+    ranges = ed.tag_ranges("search_all")  # 扁平 (start1, end1, start2, end2)
+    assert len(ranges) == 4
+    assert ed.get(ranges[0], ranges[1]) == "x"
+    assert ed.get(ranges[2], ranges[3]) == "x"
+
+
+def test_search_highlight_not_serialized(tk_root):
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("a b a")
+    ed.search_next("a", case=True)
+    doc = ed.to_document()
+    assert "search_all" not in str(doc)
+    assert "search_cur" not in str(doc)
