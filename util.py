@@ -42,6 +42,7 @@ def style_to_tag_config(style, family=DEFAULT_FAMILY, base_size=DEFAULT_SIZE):
 def get_clipboard_image():
     """从剪贴板获取 PIL.Image，无图或失败返回 None。"""
     try:
+        from PIL import Image as PILImage
         from PIL import ImageGrab
     except Exception:
         return None
@@ -49,4 +50,4 @@ def get_clipboard_image():
         img = ImageGrab.grabclipboard()
     except Exception:
         return None
-    return img
+    return img if isinstance(img, PILImage.Image) else None

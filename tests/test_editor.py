@@ -312,3 +312,49 @@ def test_sync_ime_font_does_not_crash_across_style_changes(tk_root):
     ed._on_cursor_move()
     # _ime_style 要么仍未同步(None，控件未真正显示)，要么记录了最后一次样式
     assert ed._ime_style is None or ed._ime_style.get("size") in (None, 20)
+
+
+def test_delete_marks_dirty(tk_root):
+    # 关键数据丢失修复：Backspace/Delete/Ctrl+X 等 Tcl 层删除绕过 Python insert()
+    # 覆写，必须经 <<Modified>> 虚拟事件兜底标脏。
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert("end", "hello")
+    seen = []
+    ed.set_on_dirty(lambda: seen.append(1))
+    ed.tk.call(ed._w, "delete", "1.0", "1.3")   # 模拟 Tcl 层删除（Backspace/剪切同路径）
+    ed.update_idletasks()                        # 派发 <<Modified>> 虚拟事件
+    assert seen, "Tcl 层删除未触发 dirty"
+
+
+def test_from_document_not_dirty(tk_root):
+    import snote
+    ed = editor.RichTextEditor(tk_root)
+    doc = snote.build_document({}, [{"k": "text", "text": "载入的内容"}], {})
+    ed.from_document(doc, {})
+    ed.update_idletasks()
+    seen = []
+    ed.set_on_dirty(lambda: seen.append(1))
+    ed.tk.call(ed._w, "delete", "1.0", "1.1")
+    ed.update_idletasks()
+    assert seen, "载入后应能正常标脏（说明 _loading 未卡死）"
+    # 再验证载入本身不脏：新建一个，载入后不操作，不应有脏回调
+    ed2 = editor.RichTextEditor(tk_root)
+    seen2 = []
+    ed2.set_on_dirty(lambda: seen2.append(1))
+    ed2.from_document(doc, {})
+    ed2.update_idletasks()
+    assert not seen2, "载入文档不应标脏"
+
+
+def test_paste_text_is_tagged(tk_root):
+    # 文本粘贴走 Tcl 类绑定插字（绕过 Python insert()），晚绑定必须补打标签，
+    # 否则正文出现无标签字符，控件字体随 _current_style 变化时会污染粘贴文本。
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert("end", "ab")
+    ed.mark_set("insert", "end-1c")
+    ed.clipboard_clear()
+    ed.clipboard_append("XY")
+    ed.event_generate("<<Paste>>")
+    ed.update_idletasks()
+    tags = [t for t in ed.tag_names("end-2c") if t in ed._style_tags]
+    assert tags, "粘贴的文本未打标签"

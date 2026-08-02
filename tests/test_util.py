@@ -37,3 +37,11 @@ def test_style_to_tag_config_no_strike_omits_key():
     assert "overstrike" not in cfg
     assert "foreground" not in cfg
     assert cfg["font"] == ("TkDefaultFont", 20, "bold")
+
+
+def test_get_clipboard_image_rejects_non_image(monkeypatch):
+    # 剪贴板复制文件时 grabclipboard 返回路径列表，必须视为无图返回 None，
+    # 否则 _on_paste 会把 list 当 PIL.Image 处理而崩溃。
+    from PIL import ImageGrab
+    monkeypatch.setattr(ImageGrab, "grabclipboard", lambda: ["C:/x.png"])
+    assert util.get_clipboard_image() is None

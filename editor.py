@@ -23,6 +23,7 @@ class RichTextEditor(tk.Text):
         self._on_cursor_style = None
         self._loading = False
         self._on_dirty = None
+        self._suppress_modified = 0
         self._resizer = None
         self._ime_style = None        # 上次成功同步给输入法的样式
         self._default_family = None   # 惰性解析：命名字体 -> 真实 family
@@ -31,13 +32,20 @@ class RichTextEditor(tk.Text):
         self.bind("<KeyRelease>", self._on_cursor_move, add="+")
         self.bind("<ButtonRelease-1>", self._on_cursor_move, add="+")
         self.bind("<Control-v>", self._on_paste, add="+")
+        # 菜单/程序化粘贴走 <<Paste>> 虚拟事件，同样拦截：先处理剪贴板图片，
+        # 文本粘贴则记录光标待晚绑定补打标签（class 绑定插字发生在晚绑定之前）。
+        self.bind("<<Paste>>", self._on_paste, add="+")
         self.bind("<Double-Button-1>", self._on_double_click, add="+")
         # 晚绑定：排在默认 "Text" 类绑定（真正插字）之后触发，使 _stamp_typed_range
         # 能在重绘前把 _current_style 套到刚插入的字上，消除打字时的字号/字体闪烁。
         self._late_tag = "RichTextLate_%x" % id(self)
         self.bindtags(self.bindtags() + (self._late_tag,))
         self.bind_class(self._late_tag, "<KeyPress>", self._stamp_typed_range, add="+")
+        self.bind_class(self._late_tag, "<<Paste>>", self._stamp_typed_range, add="+")
         self.bind("<FocusIn>", self._on_focus_in, add="+")
+        # <<Modified>> 兜底脏标记：Tcl 层 delete/文本粘贴/撤销/剪切/清空全部绕过
+        # Python 级 insert() 覆写，只能靠该虚拟事件补标脏。
+        self.bind("<<Modified>>", self._on_modified, add="+")
 
     # ---- dirty 回调 ----
     def set_on_dirty(self, callback):
@@ -51,6 +59,28 @@ class RichTextEditor(tk.Text):
             return
         if self._on_dirty:
             self._on_dirty()
+
+    def _on_modified(self, _event=None):
+        # Tk 每次内容变化都置 modified 并触发本事件；必须手动复位否则只触发一次。
+        if not self.edit_modified():
+            return
+        self.edit_modified(False)
+        if self._suppress_modified or self._loading:
+            return
+        self._mark_dirty()
+
+    def update_idletasks(self):
+        # <<Modified>> 虚拟事件由 Tk 异步入队，而 update idletasks 不派发事件队列，
+        # 导致 Tcl 层删除/粘贴的脏标记要拖到下一次事件循环才生效。这里在确有未处理
+        # 的 modified 事件时改用 update() 立即排空（_on_modified 复位标志后即完成），
+        # 其余情况保持原语义。
+        try:
+            if self.edit_modified():
+                self.tk.call("update")
+                return
+        except tk.TclError:
+            pass
+        super().update_idletasks()
 
     def destroy(self):
         # 清理实例级晚绑定标签，避免绑定表泄漏
@@ -320,6 +350,16 @@ class RichTextEditor(tk.Text):
         self._pending = False
         self._sync_widget_font()
         self._sync_ime_font()
+        # 排空载入期间积压的 <<Modified>> 虚拟事件（在 _loading 复位后才派发，
+        # 否则会把刚载入的文档误标为脏），随后复位 undo 栈与 modified 标志，
+        # 保证载入后首次编辑才触发脏回调。
+        self._suppress_modified += 1
+        try:
+            self.update_idletasks()
+        finally:
+            self._suppress_modified -= 1
+        self.edit_reset()
+        self.edit_modified(False)
 
     def set_line_spacing(self, px):
         """设置全局行间距（widget 级 spacing1/2/3）。"""
@@ -387,11 +427,12 @@ class RichTextEditor(tk.Text):
     # ---- 事件 ----
     def _on_paste(self, _event=None):
         img = util.get_clipboard_image()
-        if img is None:
-            return
-        max_width = max(64, self.winfo_width() - 12)
-        self.insert_image(img, max_width=max_width)
-        return "break"
+        if img is not None:
+            max_width = max(64, self.winfo_width() - 12)
+            self.insert_image(img, max_width=max_width)
+            return "break"
+        # 文本粘贴：记录位置，待 Tcl 类绑定插入后由晚绑定 _stamp_typed_range 补打标签
+        self._type_start = self.index("insert")
 
     def _on_double_click(self, event):
         idx = self.index("@%d,%d" % (event.x, event.y))
