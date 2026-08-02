@@ -18,7 +18,7 @@ There is **no lint, formatter, or typecheck** configured. Do not assume ruff/myp
 
 - Requires **Python 3.14** (`.python-version`, `pyproject.toml`). Let `uv` resolve it.
 - Runtime deps are **Pillow** and **pystray** (see `pyproject.toml`). `main.py` probes for Pillow at startup and warns if missing; `pystray` is imported lazily inside `tray.py` so a missing/broken tray never crashes startup.
-- Tests instantiate real Tk widgets. The `tk_root` fixture (see `tests/conftest.py`) calls `pytest.skip(...)` when no display is available — on a headless session most of `tests/test_editor.py` silently skips. Always check the "skipped" count, not just pass/fail. `test_util`, `test_snote`, `test_settings`, and `test_tray` are headless-safe (no real Tk — `test_tray` drives a `_FakeRoot`); only `test_editor` needs a display.
+- Tests instantiate real Tk widgets. The `tk_root` fixture (see `tests/conftest.py`) calls `pytest.skip(...)` when no display is available — on a headless session most of `tests/test_editor.py` silently skips. Always check the "skipped" count, not just pass/fail. `test_util`, `test_snote`, `test_settings`, `test_notify`, `test_reminder`, and `test_tray` are headless-safe (no real Tk — `test_tray` drives a `_FakeRoot`, `test_reminder`/`test_notify` are pure logic with an injected clock); `test_editor` and `test_reminder_dialog` need a display.
 - `image_resizer.py` uses the Windows-only `-transparentcolor` attribute and falls back to an opaque overlay on other platforms (caught `tk.TclError`). Don't "fix" that try/except.
 
 ## Architecture
@@ -34,6 +34,9 @@ Entry point is `main.py` → `app.NoteApp` (main window, menus, multi-document c
 - `imefont.py` — Windows-only IME composition-font sync. `RichTextEditor._sync_ime_font` calls `imefont.set_composition_font` whenever `_current_style` changes (cursor move / style apply / doc load / `<FocusIn>`) so the Chinese-IME preedit/candidate window matches the surrounding font instead of the widget base font. No-op on non-Windows. The visual result can't be unit-tested headlessly — it needs a real Windows IME session.
 - `tray.py` — `TrayController`: pystray tray icon + global hotkey Ctrl+Alt+N (Windows-only, via Win32 `RegisterHotKey` pumped on its own thread). **Tkinter is not thread-safe**: the hotkey-listener thread and pystray menu callbacks must NEVER call Tk directly — they only `_marshal` (enqueue); the main thread drains the queue via `root.after` polling (`_poll`/`_drain`). Tray/hotkey failures are caught and never block app startup (a busy hotkey only prints a warning). Preserve this queue+poll pattern when editing tray logic.
 - `settings.py` — pure-function read/write of app prefs (line-spacing level), no Tk dep, at `~/.simple-note/settings.json`. `load_settings`/`save_settings` are **fault-tolerant and never raise** (missing/corrupt/wrong-type/unknown-level all fall back to defaults, warning to stderr). Preset map `LINE_SPACING_PRESETS` (紧凑=0 / 标准=4 / 宽松=8 px) is applied via the `app.NoteApp` view menu → `editor.set_line_spacing(px)` and persisted.
+- `reminder.py` — Tk-free 提醒调度引擎（番茄钟状态机 + 一次性/每日提醒），时钟经 `now_fn` 注入故可无显示器单测。由 `app.NoteApp` 用 `root.after(1000, _tick)` 每秒在主线程驱动；`tick(now)` 返回到期事件。番茄钟追赶（休眠唤醒）会静默推进、每次 tick 只发一条通知。每日提醒用 `_last_tick < occ <= now` 检测跨过；`arm(now)` 在启动时设定基准，使启动前已过的每日提醒不补发。
+- `notify.py` — 通知胶水：`resolve_sound(cfg)` 纯函数（custom .wav 存在则自定义，否则系统蜂鸣）+ `notify(root, title, msg, sound_cfg)`（唤回窗口→winsound 播音→模态 `messagebox`）。自定义音频仅 Windows/.wav（`winsound.PlaySound`），任何失败回退 `root.bell()`，绝不阻断弹框。
+- `reminder_dialog.py` — 非模态管理对话框 `ReminderDialog(tk.Toplevel)`：番茄钟启停/参数、提醒列表增删、提示音配置（`sound_config()` 取回）。经 `on_change` 回调触发 app 持久化。
 
 Images are stored **losslessly**: the original `PIL.Image` source is kept in memory and re-encoded at original resolution on save; only the on-screen display is resized. Do not save the resized photo in place of the source.
 
@@ -42,3 +45,5 @@ Images are stored **losslessly**: the original `PIL.Image` source is kept in mem
 - UI strings and code docstrings are written in **Simplified Chinese**. Match this when adding user-facing text or docstrings.
 - `_apply_delta_range` / `insert` / `to_document` / `from_document` form the serialization boundary; `to_document()` then `from_document()` must round-trip equal (see `test_roundtrip_*`). Keep them in sync.
 - `.opencode/` is OpenCode tooling, not part of the application.
+- 提醒数据持久化在 `settings.json` 的 `sound`/`pomodoro`/`reminders` 键；`settings.py` 只做容错读写（保留 dict 形值），深度清洗在 `reminder.ReminderScheduler.load_dict`。
+- 提醒/番茄钟全程跑在 Tk 主线程（`root.after`），切勿引入后台线程；`app._tick` 必须异常安全且无论如何都重新 `after`，否则提醒会静默停摆。
