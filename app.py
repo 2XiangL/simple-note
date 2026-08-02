@@ -141,6 +141,8 @@ class NoteApp:
                     notify.notify(self.root, title, msg, self._sound_cfg)
                 except Exception as exc:
                     print("warning: reminder notify error: %s" % exc, file=sys.stderr)
+            # 仅一次性提醒到期会改变持久化状态（fired 条目被移除）；
+            # 番茄钟 phase 与每日提醒触发不序列化，无需写盘。
             if any(ev["kind"] == "oneshot" for ev in events):
                 self._persist()
             self._refresh_title(now)
