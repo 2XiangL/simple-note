@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import reminder
 from reminder import ReminderScheduler
@@ -87,3 +87,61 @@ def test_load_dict_drops_daily_with_inf_hour():
     )
     _, daily = s.list_reminders()
     assert daily == []
+
+
+def test_pomodoro_work_to_break_to_completion():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 2})
+    s.start_pomodoro(t0)
+    assert s.pomodoro_phase() == "work"
+
+    ev = s.tick(t0 + timedelta(minutes=25))   # 第1轮工作结束 -> 休息
+    assert len(ev) == 1 and ev[0]["kind"] == "pomodoro"
+    assert s.pomodoro_phase() == "break"
+
+    ev = s.tick(t0 + timedelta(minutes=30))   # 休息结束 -> 第2轮工作
+    assert s.pomodoro_phase() == "work"
+
+    ev = s.tick(t0 + timedelta(minutes=55))   # 第2轮工作结束 -> 完成
+    assert s.pomodoro_phase() == "idle"
+    assert ev[0]["title"] == "番茄钟完成"
+
+
+def test_pomodoro_stop_resets_idle():
+    s = ReminderScheduler()
+    s.start_pomodoro(datetime(2026, 8, 2, 9, 0))
+    s.stop_pomodoro()
+    assert s.pomodoro_phase() == "idle"
+    assert s.pomodoro_remaining() is None
+
+
+def test_pomodoro_catchup_coalesces_to_one_event():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 4})
+    s.start_pomodoro(t0)
+    ev = s.tick(t0 + timedelta(minutes=200))  # 远超全部阶段
+    assert len(ev) == 1                        # 合并为一条
+    assert ev[0]["title"] == "番茄钟完成"
+    assert s.pomodoro_phase() == "idle"
+
+
+def test_pomodoro_catchup_partial_lands_correct_phase():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 4})
+    s.start_pomodoro(t0)
+    ev = s.tick(t0 + timedelta(minutes=30))   # 跨过第1轮工作(25)与休息(30)
+    assert len(ev) == 1
+    assert s.pomodoro_phase() == "work"
+    assert s._round == 2
+
+
+def test_pomodoro_remaining_format():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 4})
+    s.start_pomodoro(t0)
+    assert s.pomodoro_remaining(t0) == ("工作中", "25:00", "第1/共4轮")
+    assert s.pomodoro_remaining(t0 + timedelta(minutes=10)) == ("工作中", "15:00", "第1/共4轮")

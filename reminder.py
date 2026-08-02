@@ -132,3 +132,64 @@ class ReminderScheduler:
 
     def list_reminders(self):
         return [dict(e) for e in self._oneshot], [dict(e) for e in self._daily]
+
+    # ---- 番茄钟 ----
+    def start_pomodoro(self, now=None):
+        now = now or self._now_fn()
+        self._phase = PHASE_WORK
+        self._round = 1
+        self._phase_end = now + timedelta(minutes=self._pomodoro["work_min"])
+
+    def stop_pomodoro(self):
+        self._phase = PHASE_IDLE
+        self._round = 0
+        self._phase_end = None
+
+    def pomodoro_phase(self):
+        return self._phase
+
+    def pomodoro_remaining(self, now=None):
+        """idle -> None；否则 (阶段中文, "MM:SS", "第N/共M轮")。"""
+        if self._phase == PHASE_IDLE or self._phase_end is None:
+            return None
+        now = now or self._now_fn()
+        total = max(0, int((self._phase_end - now).total_seconds()))
+        mm, ss = divmod(total, 60)
+        phase_cn = "工作中" if self._phase == PHASE_WORK else "休息中"
+        return (phase_cn, "%02d:%02d" % (mm, ss), "第%d/共%d轮" % (self._round, self._pomodoro["rounds"]))
+
+    # ---- 主循环 ----
+    def tick(self, now=None):
+        """推进状态，返回到期事件列表。事件形如 {"kind","title","message"}。"""
+        now = now or self._now_fn()
+        events = []
+        try:
+            events.extend(self._tick_pomodoro(now))
+        finally:
+            self._last_tick = now
+        return events
+
+    def _tick_pomodoro(self, now):
+        if self._phase == PHASE_IDLE or self._phase_end is None:
+            return []
+        last_msg = None
+        # 追赶合并：静默推进到当前应有阶段，仅保留最后一条消息
+        while self._phase != PHASE_IDLE and self._phase_end is not None and now >= self._phase_end:
+            if self._phase == PHASE_WORK:
+                if self._round >= self._pomodoro["rounds"]:
+                    last_msg = ("番茄钟完成", "已完成全部 %d 轮，休息一下吧。" % self._pomodoro["rounds"])
+                    self._phase = PHASE_IDLE
+                    self._round = 0
+                    self._phase_end = None
+                    break
+                last_msg = ("工作结束", "第 %d 轮工作结束，休息 %d 分钟。" % (self._round, self._pomodoro["break_min"]))
+                self._phase = PHASE_BREAK
+                self._phase_end = self._phase_end + timedelta(minutes=self._pomodoro["break_min"])
+            else:  # PHASE_BREAK
+                self._round += 1
+                last_msg = ("休息结束", "开始第 %d 轮工作（%d 分钟）。" % (self._round, self._pomodoro["work_min"]))
+                self._phase = PHASE_WORK
+                self._phase_end = self._phase_end + timedelta(minutes=self._pomodoro["work_min"])
+        if last_msg is None:
+            return []
+        return [{"kind": "pomodoro", "title": last_msg[0], "message": last_msg[1]}]
