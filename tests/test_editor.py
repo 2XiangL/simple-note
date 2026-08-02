@@ -490,7 +490,7 @@ def test_get_or_create_tag_reuses_tag_for_equal_style(tk_root):
     assert t1 == t2
     t3 = ed._get_or_create_tag({"bold": True, "size": 20})
     assert t3 != t1
-    assert ed._style_tag_lookup[tuple(sorted({"bold": True}.items()))] == t1
+    assert ed._style_tag_lookup[editor.RichTextEditor._style_key({"bold": True})] == t1
     assert ed._style_tags[t1] == {"bold": True}
 
 
@@ -505,7 +505,7 @@ def test_style_tag_lookup_synced_after_from_document(tk_root):
     ed2.from_document(doc, {})
     assert len(ed2._style_tags) == len(ed2._style_tag_lookup)
     for tag, style in ed2._style_tags.items():
-        assert ed2._style_tag_lookup[tuple(sorted(style.items()))] == tag
+        assert ed2._style_tag_lookup[editor.RichTextEditor._style_key(style)] == tag
     n = len(ed2._style_tags)
     t = ed2._get_or_create_tag({"bold": True})
     assert ed2._style_tags[t] == {"bold": True}
