@@ -9,14 +9,19 @@ def resolve_sound(sound_cfg):
     """纯函数：决定播放哪种提示音。
 
     返回 ("custom", path) 或 ("system", None)。
-    mode == "custom" 且 path 非空且文件存在 -> custom；否则 system。
+    mode == "custom" 且 path 非空、以 .wav 结尾（忽略大小写）且文件存在 -> custom；否则 system。
     """
     if not isinstance(sound_cfg, dict):
         return ("system", None)
     if sound_cfg.get("mode") != "custom":
         return ("system", None)
     path = sound_cfg.get("path")
-    if isinstance(path, str) and path and os.path.isfile(path):
+    if (
+        isinstance(path, str)
+        and path
+        and path.lower().endswith(".wav")
+        and os.path.isfile(path)
+    ):
         return ("custom", path)
     return ("system", None)
 

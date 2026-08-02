@@ -26,3 +26,25 @@ def test_resolve_sound_custom_empty_path_falls_back():
 def test_resolve_sound_non_dict_cfg():
     assert notify.resolve_sound(None) == ("system", None)
     assert notify.resolve_sound("junk") == ("system", None)
+
+
+def test_resolve_sound_custom_non_wav_file_falls_back(tmp_path):
+    f = tmp_path / "a.mp3"
+    f.write_bytes(b"ID3")
+    assert notify.resolve_sound({"mode": "custom", "path": str(f)}) == ("system", None)
+
+
+def test_resolve_sound_custom_uppercase_wav_extension(tmp_path):
+    f = tmp_path / "a.WAV"
+    f.write_bytes(b"RIFF")
+    assert notify.resolve_sound({"mode": "custom", "path": str(f)}) == ("custom", str(f))
+
+
+def test_resolve_sound_path_is_directory_falls_back(tmp_path):
+    assert notify.resolve_sound({"mode": "custom", "path": str(tmp_path)}) == ("system", None)
+
+
+def test_resolve_sound_non_str_path_falls_back(tmp_path):
+    f = tmp_path / "a.wav"
+    f.write_bytes(b"RIFF")
+    assert notify.resolve_sound({"mode": "custom", "path": f}) == ("system", None)
