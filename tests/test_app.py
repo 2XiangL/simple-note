@@ -242,6 +242,7 @@ def test_load_path_builds_doc(monkeypatch):
     assert made[0]["path"] == "C:/x/a.snote"
     assert made[0]["title"] == "a.snote"
     assert made[0]["document"]["format"] == "snote"
+    assert made[0]["blobs"] == {}
 
 
 def test_load_path_propagates_error(monkeypatch):
@@ -254,3 +255,82 @@ def test_load_path_propagates_error(monkeypatch):
     monkeypatch.setattr("app.snote.load_document", boom)
     with pytest.raises(ValueError):
         app._load_path("C:/x/a.snote")
+
+
+def _write_snote(path):
+    import snote
+    snote.save_document(str(path), snote.build_document({}, [], {}))
+
+
+def test_open_workspace_loads_nested_snote(tmp_path, monkeypatch):
+    # 递归发现子目录中的 .snote，非 .snote 文件忽略，载入后 dirty=False
+    from app import NoteApp
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    _write_snote(tmp_path / "a.snote")
+    _write_snote(sub / "b.snote")
+    (tmp_path / "ignore.txt").write_text("x")
+    app = NoteApp.__new__(NoteApp)
+    app.docs = []
+    added = []
+    monkeypatch.setattr("app.filedialog.askdirectory", lambda **k: str(tmp_path))
+    monkeypatch.setattr(app, "_make_doc", lambda **kw: SimpleNamespace(path=kw["path"], dirty=True))
+    monkeypatch.setattr(app, "add_doc", lambda d: added.append(d))
+    monkeypatch.setattr("app.messagebox.showwarning", lambda *a, **k: None)  # 防 bug 时真弹框阻塞
+    app.open_workspace()
+    got = sorted(os.path.normcase(d.path) for d in added)
+    want = sorted(os.path.normcase(str(p)) for p in (tmp_path / "a.snote", sub / "b.snote"))
+    assert got == want
+    assert all(d.dirty is False for d in added)
+
+
+def test_open_workspace_skips_already_open(tmp_path, monkeypatch):
+    from app import NoteApp
+    _write_snote(tmp_path / "a.snote")
+    _write_snote(tmp_path / "b.snote")
+    app = NoteApp.__new__(NoteApp)
+    app.docs = [_FakeDoc(path=str(tmp_path / "a.snote"))]
+    added = []
+    monkeypatch.setattr("app.filedialog.askdirectory", lambda **k: str(tmp_path))
+    monkeypatch.setattr(app, "_make_doc", lambda **kw: SimpleNamespace(path=kw["path"], dirty=True))
+    monkeypatch.setattr(app, "add_doc", lambda d: added.append(d))
+    monkeypatch.setattr("app.messagebox.showwarning", lambda *a, **k: None)  # 防 bug 时真弹框阻塞
+    app.open_workspace()
+    assert [os.path.normcase(d.path) for d in added] == [os.path.normcase(str(tmp_path / "b.snote"))]
+
+
+def test_open_workspace_collects_failures(tmp_path, monkeypatch):
+    # 坏文件不阻断其余加载，进入失败汇总弹框
+    from app import NoteApp
+    _write_snote(tmp_path / "good.snote")
+    (tmp_path / "bad.snote").write_bytes(b"not a zip")
+    app = NoteApp.__new__(NoteApp)
+    app.docs = []
+    added = []
+    shown = []
+    monkeypatch.setattr("app.filedialog.askdirectory", lambda **k: str(tmp_path))
+    monkeypatch.setattr(app, "_make_doc", lambda **kw: SimpleNamespace(path=kw["path"], dirty=True))
+    monkeypatch.setattr(app, "add_doc", lambda d: added.append(d))
+    monkeypatch.setattr("app.messagebox.showwarning", lambda *a, **k: shown.append(a))
+    app.open_workspace()
+    assert [os.path.normcase(d.path) for d in added] == [os.path.normcase(str(tmp_path / "good.snote"))]
+    assert shown and "bad.snote" in str(shown[0])
+
+
+def test_open_workspace_empty_dir_informs(tmp_path, monkeypatch):
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    app.docs = []
+    shown = []
+    monkeypatch.setattr("app.filedialog.askdirectory", lambda **k: str(tmp_path))
+    monkeypatch.setattr("app.messagebox.showinfo", lambda *a, **k: shown.append(a))
+    app.open_workspace()
+    assert shown
+
+
+def test_open_workspace_cancel_is_noop(monkeypatch):
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    app.docs = []
+    monkeypatch.setattr("app.filedialog.askdirectory", lambda **k: "")
+    app.open_workspace()  # 不抛、不弹框

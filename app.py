@@ -94,6 +94,7 @@ class NoteApp:
         file_menu = tk.Menu(menubar, tearoff=0)
         file_menu.add_command(label="新建", command=self.new_doc, accelerator="Ctrl+N")
         file_menu.add_command(label="打开", command=self.open_doc, accelerator="Ctrl+O")
+        file_menu.add_command(label="打开工作区...", command=self.open_workspace, accelerator="Ctrl+Shift+O")
         file_menu.add_separator()
         file_menu.add_command(label="保存", command=lambda: self.save(self.active), accelerator="Ctrl+S")
         file_menu.add_command(label="另存为", command=lambda: self.save_as(self.active))
@@ -126,6 +127,7 @@ class NoteApp:
 
         self.root.bind("<Control-n>", lambda e: self.new_doc())
         self.root.bind("<Control-o>", lambda e: self.open_doc())
+        self.root.bind("<Control-Shift-O>", lambda e: self.open_workspace())
         self.root.bind("<Control-s>", lambda e: self.save(self.active))
         self.root.bind("<Control-f>", lambda e: self._open_search_dialog())
 
@@ -270,6 +272,40 @@ class NoteApp:
             return
         doc.dirty = False
         self.add_doc(doc)
+
+    def open_workspace(self):
+        directory = filedialog.askdirectory(title="打开工作区")
+        if not directory:
+            return
+        files = sorted(Path(directory).rglob("*.snote"), key=lambda p: os.path.normcase(str(p)))
+        if not files:
+            messagebox.showinfo("打开工作区", "该目录下没有 .snote 笔记文件。")
+            return
+        loaded = 0
+        skipped = 0
+        failures = []
+        for p in files:
+            path = str(p)
+            if self._find_open_doc(path) is not None:
+                skipped += 1
+                continue
+            try:
+                doc = self._load_path(path)
+            except Exception as exc:
+                failures.append("%s：%s" % (p.name, exc))
+                continue
+            doc.dirty = False
+            self.add_doc(doc)
+            loaded += 1
+        if failures:
+            lines = failures[:10]
+            if len(failures) > 10:
+                lines.append("…等 %d 个" % len(failures))
+            messagebox.showwarning(
+                "打开工作区",
+                "已加载 %d 个，跳过重复 %d 个，失败 %d 个：\n%s"
+                % (loaded, skipped, len(failures), "\n".join(lines)),
+            )
 
     def _write_to(self, doc, path):
         try:
