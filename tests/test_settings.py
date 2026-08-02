@@ -40,7 +40,9 @@ def test_load_settings_corrupt_json_returns_default(tmp_path, capsys):
 def test_load_settings_valid_reads_value(tmp_path):
     p = tmp_path / "settings.json"
     p.write_text('{"version": 1, "line_spacing": "宽松"}', encoding="utf-8")
-    assert settings.load_settings(p) == {"version": 1, "line_spacing": "宽松"}
+    expected = settings.default_settings()
+    expected["line_spacing"] = "宽松"
+    assert settings.load_settings(p) == expected
 
 
 def test_load_settings_unknown_level_falls_back(tmp_path):
@@ -59,7 +61,9 @@ def test_load_settings_non_dict_returns_default(tmp_path):
 def test_save_then_load_roundtrip(tmp_path):
     p = tmp_path / "settings.json"
     settings.save_settings({"version": 1, "line_spacing": "紧凑"}, p)
-    assert settings.load_settings(p) == {"version": 1, "line_spacing": "紧凑"}
+    expected = settings.default_settings()
+    expected["line_spacing"] = "紧凑"
+    assert settings.load_settings(p) == expected
 
 
 def test_save_settings_creates_parent_dir(tmp_path):
@@ -75,3 +79,53 @@ def test_save_settings_oserror_does_not_raise(tmp_path, capsys):
     settings.save_settings(settings.default_settings(), p)  # 不抛
     captured = capsys.readouterr()
     assert "warning" in captured.err.lower()
+
+
+def test_default_settings_includes_new_keys():
+    d = settings.default_settings()
+    assert d["sound"] == {"mode": "system", "path": ""}
+    assert d["pomodoro"] == {"work_min": 25, "break_min": 5, "rounds": 4}
+    assert d["reminders"] == {"oneshot": [], "daily": []}
+
+
+def test_load_settings_preserves_new_keys(tmp_path):
+    p = tmp_path / "settings.json"
+    p.write_text(
+        '{"version": 1, "line_spacing": "紧凑", '
+        '"sound": {"mode": "custom", "path": "C:/a.wav"}, '
+        '"pomodoro": {"work_min": 30, "break_min": 10, "rounds": 2}, '
+        '"reminders": {"oneshot": [], "daily": [{"id": "x", "label": "hi", "hour": 8, "minute": 0}]}}',
+        encoding="utf-8",
+    )
+    d = settings.load_settings(p)
+    assert d["sound"] == {"mode": "custom", "path": "C:/a.wav"}
+    assert d["pomodoro"] == {"work_min": 30, "break_min": 10, "rounds": 2}
+    assert d["reminders"]["daily"][0]["label"] == "hi"
+
+
+def test_load_settings_old_file_without_new_keys_gets_defaults(tmp_path):
+    p = tmp_path / "settings.json"
+    p.write_text('{"version": 1, "line_spacing": "宽松"}', encoding="utf-8")
+    d = settings.load_settings(p)
+    assert d["line_spacing"] == "宽松"
+    assert d["sound"] == {"mode": "system", "path": ""}
+    assert d["pomodoro"] == {"work_min": 25, "break_min": 5, "rounds": 4}
+    assert d["reminders"] == {"oneshot": [], "daily": []}
+
+
+def test_load_settings_wrong_type_new_keys_falls_back(tmp_path):
+    p = tmp_path / "settings.json"
+    p.write_text('{"version": 1, "sound": "junk", "pomodoro": [1], "reminders": "x"}', encoding="utf-8")
+    d = settings.load_settings(p)
+    assert d["sound"] == {"mode": "system", "path": ""}
+    assert d["pomodoro"] == {"work_min": 25, "break_min": 5, "rounds": 4}
+    assert d["reminders"] == {"oneshot": [], "daily": []}
+
+
+def test_save_load_roundtrip_with_new_keys(tmp_path):
+    p = tmp_path / "settings.json"
+    data = settings.default_settings()
+    data["pomodoro"] = {"work_min": 50, "break_min": 10, "rounds": 3}
+    data["reminders"] = {"oneshot": [], "daily": [{"id": "d1", "label": "喝水", "hour": 8, "minute": 0}]}
+    settings.save_settings(data, p)
+    assert settings.load_settings(p) == data

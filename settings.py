@@ -11,10 +11,20 @@ DEFAULT_LINE_SPACING = "标准"
 LINE_SPACING_PRESETS = {"紧凑": 0, "标准": 4, "宽松": 8}
 PRESET_ORDER = ["紧凑", "标准", "宽松"]
 
+DEFAULT_SOUND = {"mode": "system", "path": ""}
+DEFAULT_POMODORO = {"work_min": 25, "break_min": 5, "rounds": 4}
+DEFAULT_REMINDERS = {"oneshot": [], "daily": []}
+
 
 def default_settings():
     """返回含全部默认值的完整设置 dict。"""
-    return {"version": SETTINGS_VERSION, "line_spacing": DEFAULT_LINE_SPACING}
+    return {
+        "version": SETTINGS_VERSION,
+        "line_spacing": DEFAULT_LINE_SPACING,
+        "sound": dict(DEFAULT_SOUND),
+        "pomodoro": dict(DEFAULT_POMODORO),
+        "reminders": {"oneshot": [], "daily": []},
+    }
 
 
 def px_for_level(name):
@@ -46,6 +56,10 @@ def load_settings(path=None):
         level = raw.get("line_spacing")
         if level in LINE_SPACING_PRESETS:
             data["line_spacing"] = level
+        for key in ("sound", "pomodoro", "reminders"):
+            val = raw.get(key)
+            if isinstance(val, dict):
+                data[key] = val
     return data
 
 
