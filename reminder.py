@@ -159,12 +159,18 @@ class ReminderScheduler:
         return (phase_cn, "%02d:%02d" % (mm, ss), "第%d/共%d轮" % (self._round, self._pomodoro["rounds"]))
 
     # ---- 主循环 ----
+    def arm(self, now=None):
+        """启动时调用一次：设 _last_tick = now，使每日提醒不补发启动前已过时刻。"""
+        self._last_tick = now or self._now_fn()
+
     def tick(self, now=None):
         """推进状态，返回到期事件列表。事件形如 {"kind","title","message"}。"""
         now = now or self._now_fn()
         events = []
         try:
             events.extend(self._tick_pomodoro(now))
+            events.extend(self._tick_oneshot(now))
+            events.extend(self._tick_daily(now))
         finally:
             self._last_tick = now
         return events
@@ -193,3 +199,31 @@ class ReminderScheduler:
         if last_msg is None:
             return []
         return [{"kind": "pomodoro", "title": last_msg[0], "message": last_msg[1]}]
+
+    def _tick_oneshot(self, now):
+        events = []
+        remaining = []
+        for e in self._oneshot:
+            try:
+                fired = now >= datetime.fromisoformat(e["when"])
+            except (ValueError, TypeError):
+                fired = False
+            if fired:
+                events.append({"kind": "oneshot", "title": "提醒", "message": e["label"]})
+            else:
+                remaining.append(e)
+        self._oneshot = remaining
+        return events
+
+    def _tick_daily(self, now):
+        events = []
+        if self._last_tick is None:
+            return events
+        for e in self._daily:
+            try:
+                occ = now.replace(hour=e["hour"], minute=e["minute"], second=0, microsecond=0)
+            except (ValueError, TypeError):
+                continue
+            if self._last_tick < occ <= now:
+                events.append({"kind": "daily", "title": "每日提醒", "message": e["label"]})
+        return events

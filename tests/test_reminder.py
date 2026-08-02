@@ -175,3 +175,48 @@ def test_pomodoro_phase_transition_messages():
     assert ev[0]["title"] == "休息结束" and "第 2 轮" in ev[0]["message"]
     # 第2轮工作的剩余标签为 第2/共2轮
     assert s.pomodoro_remaining(t0 + timedelta(minutes=30)) == ("工作中", "25:00", "第2/共2轮")
+
+
+def test_oneshot_fires_once_and_is_removed():
+    s = ReminderScheduler()
+    s.arm(datetime(2026, 8, 2, 19, 0))
+    s.add_oneshot("开会", datetime(2026, 8, 2, 20, 0))
+    assert s.tick(datetime(2026, 8, 2, 19, 59)) == []
+    ev = s.tick(datetime(2026, 8, 2, 20, 0))
+    assert len(ev) == 1 and ev[0]["kind"] == "oneshot" and ev[0]["message"] == "开会"
+    assert s.tick(datetime(2026, 8, 2, 20, 1)) == []   # 已移除，不再触发
+    assert s.list_reminders()[0] == []
+
+
+def test_oneshot_overdue_at_startup_fires_on_first_tick():
+    s = ReminderScheduler()
+    s.add_oneshot("开会", datetime(2026, 8, 2, 20, 0))
+    s.arm(datetime(2026, 8, 2, 21, 0))                # 启动时已过期
+    ev = s.tick(datetime(2026, 8, 2, 21, 0))
+    assert len(ev) == 1 and ev[0]["message"] == "开会"
+
+
+def test_daily_fires_on_crossing_not_repeated():
+    s = ReminderScheduler()
+    s.add_daily("喝水", 8, 0)
+    s.arm(datetime(2026, 8, 2, 7, 0))
+    assert s.tick(datetime(2026, 8, 2, 7, 59)) == []
+    ev = s.tick(datetime(2026, 8, 2, 8, 0, 30))
+    assert len(ev) == 1 and ev[0]["kind"] == "daily" and ev[0]["message"] == "喝水"
+    assert s.tick(datetime(2026, 8, 2, 8, 1)) == []   # 不重复
+
+
+def test_daily_not_retrofired_before_arm_time():
+    s = ReminderScheduler()
+    s.add_daily("喝水", 8, 0)
+    s.arm(datetime(2026, 8, 2, 9, 0))                 # 9 点才启动
+    assert s.tick(datetime(2026, 8, 2, 9, 0)) == []   # 不补发 8 点
+
+
+def test_daily_sleep_wake_catchup_fires_once():
+    s = ReminderScheduler()
+    s.add_daily("喝水", 8, 0)
+    s.arm(datetime(2026, 8, 2, 7, 0))
+    s.tick(datetime(2026, 8, 2, 7, 30))
+    ev = s.tick(datetime(2026, 8, 2, 9, 0))           # 休眠后唤醒，已过 8 点
+    assert len(ev) == 1 and ev[0]["message"] == "喝水"
