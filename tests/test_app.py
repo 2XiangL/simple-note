@@ -1,4 +1,5 @@
 import os
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -28,8 +29,10 @@ def test_open_doc_dedupes_already_open_path(tmp_path, monkeypatch):
     assert calls == [("switch", existing)]
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="normcase 大小写折叠仅 Windows")
 def test_open_doc_dedupes_by_realpath_case(tmp_path, monkeypatch):
-    # 同一文件的不同写法（大小写/相对路径）仍判重
+    # 同一文件的不同写法（大小写/相对路径）仍判重；POSIX 上 normcase 恒等，
+    # 该用例仅 Windows 有意义（避免未来 CI 误报）
     from app import NoteApp
     f = tmp_path / "CaseTest.snote"
     f.write_bytes(b"x")

@@ -96,10 +96,11 @@ class _HotkeyListener(threading.Thread):
                 if ret == 0:
                     break
                 if ret < 0:
-                    # 记录错误码再退出，不再静默消失
+                    # 记录错误码并经 on_status 封送回主线程（监听线程只入队、
+                    # 不打印/碰 Tk），由主线程更新 status() 并告警
                     self._error = ctypes.get_last_error()
-                    print("warning: 热键消息泵 GetMessageW 失败"
-                          "（GetLastError=%d），热键监听已退出" % self._error)
+                    if self._on_status is not None:
+                        self._on_status(self._registered, self._error)
                     break
                 if msg.message == _WM_HOTKEY:
                     self._on_triggered()
@@ -213,6 +214,7 @@ class TrayController:
     def _on_hotkey_status(self, registered, error):
         # 主线程消费热键状态消息：替代原启动时最长 2s 的阻塞等待，
         # 注册结果（含失败原因）异步经队列回主线程记录/告警。
+        # registered=True 且 error!=0 表示消息泵 GetMessageW 失败退出。
         self._hotkey_registered = registered
         self._hotkey_error = error
         if not registered:
@@ -222,6 +224,9 @@ class TrayController:
             else:
                 print("warning: 全局热键 Ctrl+Alt+N 注册失败"
                       "（GetLastError=%d）" % error)
+        elif error:
+            print("warning: 热键消息泵 GetMessageW 失败"
+                  "（GetLastError=%d），热键监听已退出" % error)
 
     def _on_menu_toggle(self, _icon=None, _item=None):
         self._marshal(self.toggle_visibility)

@@ -86,3 +86,7 @@ def test_hotkey_status_failure_prints_warning(capsys):
     tc._on_hotkey_status(False, 5)
     out = capsys.readouterr().out
     assert "GetLastError=5" in out
+    tc._on_hotkey_status(True, 5)   # 注册成功但消息泵 GetMessageW 失败
+    out = capsys.readouterr().out
+    assert "GetMessageW" in out
+    assert tc.status() == (False, True, 5)

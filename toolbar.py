@@ -57,8 +57,9 @@ class FormatToolbar(ttk.Frame):
         except ValueError:
             return
         # 钳制到合法范围：0/负数会退化为像素字体（Tk 负数=像素字号），
-        # 巨大值导致荒谬布局；钳制后再应用。
+        # 巨大值导致荒谬布局；钳制后再应用，并把显示值回写（所见即所得）。
         size = max(1, min(size, 400))
+        self.size_var.set(str(size))
         self.editor.apply_style_to_selection({"size": size})
 
     def toggle(self, attr):

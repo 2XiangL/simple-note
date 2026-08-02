@@ -302,6 +302,7 @@ def test_toolbar_size_clamped_to_valid_range(tk_root):
     tb.size_var.set("99999")
     tb.on_size()
     assert ed.applied == [{"size": 1}, {"size": 1}, {"size": 400}]
+    assert tb.size_var.get() == "400", "钳制后显示值应回写"
     tb.size_var.set("abc")
     tb.on_size()
     assert len(ed.applied) == 3  # 非数字忽略
