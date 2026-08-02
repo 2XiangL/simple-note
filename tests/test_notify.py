@@ -53,10 +53,9 @@ def test_resolve_sound_non_str_path_falls_back(tmp_path):
 def test_format_events_single_and_multi():
     one = [{"kind": "daily", "title": "每日提醒", "message": "喝水"}]
     title, msg = notify.format_events(one)
-    assert title == "每日提醒" and "喝水" in msg
+    assert title == "每日提醒" and msg == "喝水"
     many = [
         {"kind": "pomodoro", "title": "工作结束", "message": "休息"},
         {"kind": "daily", "title": "每日提醒", "message": "喝水"},
     ]
-    title, msg = notify.format_events(many)
-    assert title == "提醒" and "工作结束" in msg and "喝水" in msg
+    assert notify.format_events(many) == ("提醒", "工作结束：休息\n每日提醒：喝水")

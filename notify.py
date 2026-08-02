@@ -27,7 +27,7 @@ def resolve_sound(sound_cfg):
 
 
 def format_events(events):
-    """把一批到期事件合并为 (title, message)，供单次弹框展示。"""
+    """把一批到期事件合并为 (title, message)，供单次弹框展示。单事件原样透传（不合并）。"""
     if len(events) == 1:
         ev = events[0]
         return ev["title"], ev["message"]
