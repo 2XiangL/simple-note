@@ -182,6 +182,8 @@ class NoteApp:
         )
 
     def _start_pomodoro(self):
+        if self.scheduler.pomodoro_phase() != "idle":
+            return
         self.scheduler.start_pomodoro(datetime.now())
         self._refresh_title()
 
@@ -322,6 +324,8 @@ class NoteApp:
                 self.switch_to(doc)
                 if not self._confirm_save(doc):
                     return
+        if self._reminder_dlg is not None and self._reminder_dlg.winfo_exists():
+            self._reminder_dlg._apply_pomodoro_cfg()
         self._persist()
         self.tray.stop()
         self.root.destroy()

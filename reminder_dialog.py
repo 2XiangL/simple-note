@@ -52,11 +52,14 @@ class ReminderDialog(tk.Toplevel):
                 "rounds": self._rounds_var.get(),
             }
         except tk.TclError:
-            return
+            return False
         self._scheduler.update_pomodoro(cfg)
+        return True
 
     def _on_pomo_toggle(self):
-        self._apply_pomodoro_cfg()
+        if not self._apply_pomodoro_cfg():
+            messagebox.showwarning("番茄钟", "参数格式不正确。", parent=self)
+            return
         if self._scheduler.pomodoro_phase() == "idle":
             self._scheduler.start_pomodoro()
         else:
@@ -98,6 +101,8 @@ class ReminderDialog(tk.Toplevel):
         sel = self._tree.selection()
         if not sel:
             return
+        if not messagebox.askyesno("删除提醒", "确认删除选中项？", parent=self):
+            return
         for rid in sel:
             self._scheduler.remove(rid)
         self.refresh_list()
@@ -117,7 +122,7 @@ class ReminderDialog(tk.Toplevel):
         ttk.Label(frame, text="日期").pack(side=tk.LEFT, padx=2)
         ttk.Entry(frame, textvariable=self._date_var, width=10).pack(side=tk.LEFT)
         self._hour_var = tk.IntVar(value=datetime.now().hour)
-        self._minute_var = tk.IntVar(value=0)
+        self._minute_var = tk.IntVar(value=datetime.now().minute)
         ttk.Label(frame, text="时").pack(side=tk.LEFT, padx=2)
         ttk.Spinbox(frame, from_=0, to=23, width=3, textvariable=self._hour_var).pack(side=tk.LEFT)
         ttk.Label(frame, text="分").pack(side=tk.LEFT, padx=2)
@@ -139,14 +144,25 @@ class ReminderDialog(tk.Toplevel):
             messagebox.showwarning("新增提醒", "时间超出范围（时 0–23，分 0–59）。", parent=self)
             return
         if self._type_var.get() == "daily":
-            self._scheduler.add_daily(label, hour, minute)
+            try:
+                self._scheduler.add_daily(label, hour, minute)
+            except ValueError as exc:
+                messagebox.showwarning("新增提醒", str(exc), parent=self)
+                return
         else:
             try:
                 when = datetime.strptime("%s %02d:%02d" % (self._date_var.get().strip(), hour, minute), "%Y-%m-%d %H:%M")
             except ValueError:
                 messagebox.showwarning("新增提醒", "日期格式应为 YYYY-MM-DD。", parent=self)
                 return
-            self._scheduler.add_oneshot(label, when)
+            if when <= datetime.now():
+                messagebox.showwarning("新增提醒", "时间必须晚于当前。", parent=self)
+                return
+            try:
+                self._scheduler.add_oneshot(label, when)
+            except ValueError as exc:
+                messagebox.showwarning("新增提醒", str(exc), parent=self)
+                return
         self._label_var.set("")
         self.refresh_list()
         self._on_change()
