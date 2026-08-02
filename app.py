@@ -135,12 +135,18 @@ class NoteApp:
             now = datetime.now()
             events = self.scheduler.tick(now)
             for ev in events:
-                notify.notify(self.root, ev["title"], ev["message"], self._sound_cfg)
+                try:
+                    notify.notify(self.root, ev["title"], ev["message"], self._sound_cfg)
+                except Exception as exc:
+                    print("warning: reminder notify error: %s" % exc, file=sys.stderr)
             if events:
                 self._persist()
             self._refresh_title(now)
             if self._reminder_dlg is not None and self._reminder_dlg.winfo_exists():
-                self._reminder_dlg.refresh_list()
+                if events:
+                    self._reminder_dlg.refresh_list()
+                else:
+                    self._reminder_dlg.refresh_status()
         except Exception as exc:
             print("warning: reminder tick error: %s" % exc, file=sys.stderr)
         finally:
