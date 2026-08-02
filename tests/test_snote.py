@@ -76,3 +76,20 @@ def test_missing_image_blob_tolerated(tmp_path):
     loaded, blobs = snote.load_document(path)
     assert loaded == doc
     assert blobs == {}
+
+
+def test_save_failure_keeps_original(tmp_path, monkeypatch):
+    p = tmp_path / "n.snote"
+    doc = snote.build_document({}, [{"k": "text", "text": "原件"}], {})
+    snote.save_document(p, doc)
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(json, "dumps", boom)
+    try:
+        snote.save_document(p, snote.build_document({}, [{"k": "text", "text": "新件"}], {}))
+    except OSError:
+        pass
+    loaded, _ = snote.load_document(p)
+    assert loaded["ops"][0]["text"] == "原件", "失败写入破坏了原笔记"

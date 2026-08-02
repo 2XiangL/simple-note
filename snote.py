@@ -1,6 +1,8 @@
 """.snote 自包含文件格式：zip(content.json + images/<id>.png)。"""
 
 import json
+import os
+import tempfile
 import zipfile
 
 FORMAT = "snote"
@@ -19,18 +21,30 @@ def build_document(styles, ops, images):
 
 
 def save_document(path, document, image_blobs=None):
-    """把 document 写入 .snote(zip)。
+    """把 document 写入 .snote(zip)，原子替换；写入失败不破坏既有文件。
 
     image_blobs: {img_id: 原始 bytes}，仅写入 document['images'] 中引用且提供的图片。
     """
     image_blobs = image_blobs or {}
-    with zipfile.ZipFile(str(path), "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("content.json", json.dumps(document, ensure_ascii=False))
-        for img_id, meta in document.get("images", {}).items():
-            data = image_blobs.get(img_id)
-            if data is None:
-                continue
-            zf.writestr(meta["file"], data)
+    path = str(path)
+    parent = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(dir=parent, suffix=".snote.tmp")
+    os.close(fd)
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("content.json", json.dumps(document, ensure_ascii=False))
+            for img_id, meta in document.get("images", {}).items():
+                data = image_blobs.get(img_id)
+                if data is None:
+                    continue
+                zf.writestr(meta["file"], data)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def load_document(path):

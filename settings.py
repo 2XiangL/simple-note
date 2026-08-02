@@ -1,7 +1,9 @@
 """应用级偏好：纯函数读写设置文件（无 Tk 依赖）。"""
 
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 SETTINGS_VERSION = 1
@@ -64,11 +66,20 @@ def load_settings(path=None):
 
 
 def save_settings(settings_data, path=None):
-    """写入设置；OSError 仅向 stderr 警告，不抛、不阻塞 UI。"""
+    """写入设置（原子替换）；OSError 仅向 stderr 警告，不抛、不阻塞 UI。"""
     path = Path(path) if path is not None else settings_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(settings_data, f, ensure_ascii=False)
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(settings_data, f, ensure_ascii=False)
+            os.replace(tmp, str(path))
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
     except OSError as exc:
         print("warning: failed to save settings (%s)" % exc, file=sys.stderr)
