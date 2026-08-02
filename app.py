@@ -16,6 +16,7 @@ from reminder_dialog import ReminderDialog
 from tray import TrayController
 from notes_panel import NotesPanel
 from toolbar import FormatToolbar
+from search_dialog import SearchDialog
 
 NOTE_FILTER = [("Simple Note", "*.snote"), ("所有文件", "*.*")]
 
@@ -55,6 +56,7 @@ class NoteApp:
         self.scheduler.load_dict(self.settings.get("pomodoro"), self.settings.get("reminders"))
         self._sound_cfg = self.settings.get("sound") or dict(settings.DEFAULT_SOUND)
         self._reminder_dlg = None
+        self._search_dlg = None
         self.scheduler.arm(datetime.now())
 
         self._build_menu()
@@ -99,6 +101,10 @@ class NoteApp:
         file_menu.add_command(label="退出", command=self._real_quit)
         menubar.add_cascade(label="文件", menu=file_menu)
 
+        edit_menu = tk.Menu(menubar, tearoff=0)
+        edit_menu.add_command(label="查找...", command=self._open_search_dialog, accelerator="Ctrl+F")
+        menubar.add_cascade(label="编辑", menu=edit_menu)
+
         view_menu = tk.Menu(menubar, tearoff=0)
         for name in settings.PRESET_ORDER:
             view_menu.add_radiobutton(
@@ -121,6 +127,7 @@ class NoteApp:
         self.root.bind("<Control-n>", lambda e: self.new_doc())
         self.root.bind("<Control-o>", lambda e: self.open_doc())
         self.root.bind("<Control-s>", lambda e: self.save(self.active))
+        self.root.bind("<Control-f>", lambda e: self._open_search_dialog())
 
     def _on_line_spacing(self):
         level = self._ls_var.get()
@@ -184,6 +191,16 @@ class NoteApp:
         self._reminder_dlg = ReminderDialog(
             self.root, self.scheduler, self._sound_cfg, on_change=self._on_reminder_change
         )
+
+    def _open_search_dialog(self):
+        if getattr(self, "_search_dlg", None) is not None and self._search_dlg.winfo_exists():
+            self._search_dlg.lift()
+            self._search_dlg.focus_entry()
+            return
+        self._search_dlg = SearchDialog(
+            self.root, lambda: self.active.editor if self.active is not None else None
+        )
+        self._search_dlg.focus_entry()
 
     def _start_pomodoro(self):
         if self.scheduler.pomodoro_phase() != "idle":
@@ -314,6 +331,8 @@ class NoteApp:
         self.toolbar.set_editor(doc.editor)
         doc.editor._on_cursor_move()
         self.panel.select(doc)
+        if self._search_dlg is not None and self._search_dlg.winfo_exists():
+            self._search_dlg.refresh()
 
     def _on_dirty(self, doc):
         if doc is None:

@@ -124,3 +124,38 @@ def test_make_doc_wires_vertical_scrollbar(tk_root):
     assert len(sbs) == 1
     assert doc.editor.cget("yscrollcommand")  # editor -> sb.set
     assert sbs[0].cget("command")             # sb -> editor.yview
+
+
+def test_open_search_dialog_singleton(tk_root):
+    # 对话框单例复用：已存在则 lift，销毁后可重建
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    app.root = tk_root
+    app.active = None
+    app._open_search_dialog()
+    first = app._search_dlg
+    assert first is not None and first.winfo_exists()
+    app._open_search_dialog()
+    assert app._search_dlg is first
+    first.destroy()
+    app._open_search_dialog()
+    assert app._search_dlg is not first
+
+
+def test_switch_to_refreshes_search_dialog(tk_root):
+    # 文档切换时查找对话框重算状态/高亮
+    import settings
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    app.editor_host = tk_root
+    app._line_spacing = settings.DEFAULT_LINE_SPACING
+    d1 = app._make_doc()
+    d2 = app._make_doc()
+    app.docs = [d1, d2]
+    app.active = None
+    app.panel = SimpleNamespace(select=lambda d: None)
+    app.toolbar = SimpleNamespace(set_editor=lambda e: None)
+    calls = []
+    app._search_dlg = SimpleNamespace(winfo_exists=lambda: True, refresh=lambda: calls.append(1))
+    app.switch_to(d2)
+    assert calls == [1]
