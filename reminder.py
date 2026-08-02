@@ -22,7 +22,7 @@ def _new_id():
 def _clamp_int(val, lo, hi, default):
     try:
         n = int(val)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
     return max(lo, min(hi, n))
 
@@ -63,7 +63,7 @@ def _sanitize_daily(entry):
     try:
         hour = int(entry.get("hour"))
         minute = int(entry.get("minute"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         return None

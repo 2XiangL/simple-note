@@ -73,3 +73,17 @@ def test_load_dict_never_raises_on_garbage():
     s.load_dict(None, None)
     s.load_dict([1, 2], "junk")
     assert s.list_reminders() == ([], [])
+
+
+def test_sanitize_pomodoro_inf_does_not_raise():
+    assert reminder.sanitize_pomodoro({"work_min": 1e999}) == {"work_min": 25, "break_min": 5, "rounds": 4}
+
+
+def test_load_dict_drops_daily_with_inf_hour():
+    s = ReminderScheduler()
+    s.load_dict(
+        {"work_min": 25, "break_min": 5, "rounds": 4},
+        {"daily": [{"id": "x", "label": "ok", "hour": 1e999, "minute": 0}]},
+    )
+    _, daily = s.list_reminders()
+    assert daily == []
