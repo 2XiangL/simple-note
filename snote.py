@@ -57,9 +57,16 @@ def load_document(path):
             if "content.json" not in zf.namelist():
                 raise ValueError("missing content.json")
             document = json.loads(zf.read("content.json"))
+            if not isinstance(document, dict):
+                raise ValueError("content.json 不是 JSON 对象")
+            images = document.get("images", {})
+            if not isinstance(images, dict):
+                raise ValueError("images 不是 JSON 对象")
             names = set(zf.namelist())
             image_blobs = {}
-            for img_id, meta in document.get("images", {}).items():
+            for img_id, meta in images.items():
+                if not isinstance(meta, dict):
+                    raise ValueError("images.%s 不是 JSON 对象" % img_id)
                 f = meta.get("file")
                 if f and f in names:
                     image_blobs[img_id] = zf.read(f)

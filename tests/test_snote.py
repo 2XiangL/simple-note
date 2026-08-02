@@ -67,6 +67,33 @@ def test_load_wrong_format_raises(tmp_path):
         snote.load_document(path)
 
 
+def test_load_non_dict_content_json_raises(tmp_path):
+    # content.json 是 JSON 数组：必须抛 ValueError（让 app 走友好弹框），
+    # 而非 AttributeError 栈。
+    path = tmp_path / "list.snote"
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("content.json", json.dumps([1, 2, 3]))
+    with pytest.raises(ValueError):
+        snote.load_document(path)
+
+
+def test_load_non_dict_images_raises(tmp_path):
+    path = tmp_path / "badimg.snote"
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("content.json", json.dumps({"format": "snote", "version": 1, "images": ["x"]}))
+    with pytest.raises(ValueError):
+        snote.load_document(path)
+
+
+def test_load_non_dict_image_meta_raises(tmp_path):
+    path = tmp_path / "badmeta.snote"
+    doc = snote.build_document({}, [], {"img1": "not-a-dict"})
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("content.json", json.dumps(doc))
+    with pytest.raises(ValueError):
+        snote.load_document(path)
+
+
 def test_missing_image_blob_tolerated(tmp_path):
     doc = snote.build_document(
         {}, [{"k": "image", "id": "img1"}], {"img1": {"file": "images/missing.png", "width": 1, "height": 1}}
