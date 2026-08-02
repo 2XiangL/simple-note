@@ -16,6 +16,7 @@ class RichTextEditor(tk.Text):
         self.family = family
         self.base_size = base_size
         self._style_tags = {}        # tag id -> style dict
+        self._style_tag_lookup = {}  # 样式键(tuple(sorted(style.items()))) -> tag id，O(1) 反查
         self._images = {}            # img id -> {source, photo, width, height}
         self._style_counter = 0
         self._image_counter = 0
@@ -82,12 +83,16 @@ class RichTextEditor(tk.Text):
 
     # ---- 样式标签管理 ----
     def _get_or_create_tag(self, style):
-        for tag, st in self._style_tags.items():
-            if st == style:
-                return tag
+        # O(1) 反查：样式（dict 相等）即同标签，键为排序后的 items 元组；
+        # 样式值恒为 str/bool/int/None 浅值，嵌套排序安全。
+        key = tuple(sorted(style.items()))
+        tag = self._style_tag_lookup.get(key)
+        if tag is not None:
+            return tag
         self._style_counter += 1
         tag = "s%d" % self._style_counter
         self._style_tags[tag] = dict(style)
+        self._style_tag_lookup[key] = tag
         self.tag_configure(tag, **util.style_to_tag_config(style, self.family, self.base_size))
         return tag
 
@@ -346,6 +351,7 @@ class RichTextEditor(tk.Text):
         finally:
             self._loading = False
         self._style_tags.clear()
+        self._style_tag_lookup.clear()
         self._images.clear()
         self._style_counter = 0
         self._image_counter = 0
@@ -353,6 +359,7 @@ class RichTextEditor(tk.Text):
         max_s = 0
         for tag, style in document.get("styles", {}).items():
             self._style_tags[tag] = dict(style)
+            self._style_tag_lookup[tuple(sorted(style.items()))] = tag
             self.tag_configure(tag, **util.style_to_tag_config(style, self.family, self.base_size))
             num = tag[1:] if tag.startswith("s") and tag[1:].isdigit() else "0"
             max_s = max(max_s, int(num))

@@ -478,3 +478,36 @@ def test_undo_marks_dirty(tk_root):
     ed.tk.call(ed._w, "edit", "undo")
     tk_root.update()
     assert seen, "撤销未触发 dirty"
+
+
+# ---- 样式标签 O(1) 反查（_style_tag_lookup）----
+
+def test_get_or_create_tag_reuses_tag_for_equal_style(tk_root):
+    # 样式相等（dict 相等）即同一标签；lookup 与 _style_tags 双向一致
+    ed = editor.RichTextEditor(tk_root)
+    t1 = ed._get_or_create_tag({"bold": True})
+    t2 = ed._get_or_create_tag({"bold": True})
+    assert t1 == t2
+    t3 = ed._get_or_create_tag({"bold": True, "size": 20})
+    assert t3 != t1
+    assert ed._style_tag_lookup[tuple(sorted({"bold": True}.items()))] == t1
+    assert ed._style_tags[t1] == {"bold": True}
+
+
+def test_style_tag_lookup_synced_after_from_document(tk_root):
+    # from_document 直接写 _style_tags 的路径必须同步 lookup；载入后按同样式
+    # 取标签应命中载入的标签而不是新建（数量不增长）
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    ed._apply_delta_range("1.0", "1.1", {"bold": True})
+    doc = ed.to_document()
+    ed2 = editor.RichTextEditor(tk_root)
+    ed2.from_document(doc, {})
+    assert len(ed2._style_tags) == len(ed2._style_tag_lookup)
+    for tag, style in ed2._style_tags.items():
+        assert ed2._style_tag_lookup[tuple(sorted(style.items()))] == tag
+    n = len(ed2._style_tags)
+    t = ed2._get_or_create_tag({"bold": True})
+    assert ed2._style_tags[t] == {"bold": True}
+    assert len(ed2._style_tags) == n
+    assert len(ed2._style_tags) == len(ed2._style_tag_lookup)
