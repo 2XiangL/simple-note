@@ -252,6 +252,20 @@ def test_multiple_due_events_in_one_tick():
     assert s.list_reminders()[0] == []   # oneshot 已被移除
 
 
+def test_load_dict_normalizes_tzaware_oneshot():
+    s = ReminderScheduler()
+    s.load_dict(
+        {"work_min": 25, "break_min": 5, "rounds": 4},
+        {"oneshot": [{"id": "a", "label": "会议", "when": "2026-08-02T20:00:00+08:00"}], "daily": []},
+    )
+    oneshot, _ = s.list_reminders()
+    assert len(oneshot) == 1
+    assert oneshot[0]["when"] == "2026-08-02T20:00:00"   # tzinfo 已剥离
+    s.arm(datetime(2026, 8, 2, 19, 0))
+    ev = s.tick(datetime(2026, 8, 2, 20, 0))
+    assert len(ev) == 1 and ev[0]["message"] == "会议"    # 能正常触发
+
+
 def test_corrupt_entry_in_memory_does_not_crash_tick():
     s = ReminderScheduler()
     s._oneshot = [{"id": "x", "label": "坏", "when": "不是日期"}]

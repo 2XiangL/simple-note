@@ -32,3 +32,11 @@ def test_dialog_sound_config(tk_root):
         assert cfg == {"mode": "custom", "path": "C:/x.wav"}
     finally:
         dlg.destroy()
+
+
+def test_dialog_close_applies_pomodoro_cfg(tk_root):
+    sched = reminder.ReminderScheduler()
+    dlg = ReminderDialog(tk_root, sched, {"mode": "system", "path": ""}, on_change=lambda: None)
+    dlg._work_var.set(50)
+    dlg._on_close()   # 关闭即销毁，作为最后一步
+    assert sched.pomodoro_config()["work_min"] == 50

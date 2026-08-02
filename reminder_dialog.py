@@ -183,5 +183,6 @@ class ReminderDialog(tk.Toplevel):
         return {"mode": self._sound_mode_var.get(), "path": self._sound_path_var.get().strip()}
 
     def _on_close(self):
+        self._apply_pomodoro_cfg()
         self._on_change()
         self.destroy()

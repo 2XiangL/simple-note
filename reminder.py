@@ -45,9 +45,12 @@ def _sanitize_oneshot(entry):
     if not isinstance(label, str) or not isinstance(when, str):
         return None
     try:
-        datetime.fromisoformat(when)
+        when_dt = datetime.fromisoformat(when)
     except ValueError:
         return None
+    if when_dt.tzinfo is not None:
+        when_dt = when_dt.replace(tzinfo=None)
+        when = when_dt.isoformat()
     rid = entry.get("id")
     if not isinstance(rid, str) or not rid:
         rid = _new_id()
