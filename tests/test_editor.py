@@ -33,6 +33,92 @@ def test_each_char_one_style_tag(tk_root):
     assert tags0 != tags1
 
 
+def test_apply_delta_range_matches_per_char_semantics(tk_root):
+    # 按同样式段批量打标的实现必须与旧逐字符语义等价：范围内每字符的
+    # 样式等于 merge(原样式, delta)；逐字仅保留一个样式标签。
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ABCDEFGHIJKLMNOP")  # 16 个普通字符
+    ed._apply_delta_range("1.2", "1.4", {"bold": True})     # C、D 加粗
+    ed._apply_delta_range("1.5", "1.7", {"italic": True})   # F、G 斜体
+    ed._apply_delta_range("1.8", "1.9", {"size": 14})       # I 改字号
+    ed._apply_delta_range("1.10", "1.12", {"fg": "#ff0000", "bold": True})  # K、L 红色加粗
+    idxs = ["1.%d" % i for i in range(16)]
+    before = {i: ed._style_at(i) for i in idxs}
+    ed._apply_delta_range("1.0", "1.16", {"strike": True})
+    for i in idxs:
+        assert ed._style_at(i) == util.merge_style(before[i], {"strike": True}), i
+        style_tags = [t for t in ed.tag_names(i) if t in ed._style_tags]
+        assert len(style_tags) == 1, "字符 %s 应仅有一个样式标签" % i
+    # delta 值为 None 的删除分支同样逐字等价
+    ed._apply_delta_range("1.0", "1.16", {"bold": None})
+    for i in idxs:
+        expected = util.merge_style(util.merge_style(before[i], {"strike": True}), {"bold": None})
+        assert ed._style_at(i) == expected, i
+
+
+def test_apply_delta_range_leaves_outside_range_untouched(tk_root):
+    # 范围外的字符：样式标签与样式内容都不得被改动
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("abcdef")
+    ed._apply_delta_range("1.1", "1.2", {"bold": True})    # b 加粗
+    ed._apply_delta_range("1.3", "1.4", {"italic": True})  # d 斜体
+    outside = {i: ed.tag_names(i) for i in ("1.0", "1.4", "1.5")}
+    ed._apply_delta_range("1.1", "1.4", {"strike": True})  # 只动 b、c、d
+    for i, tags in outside.items():
+        assert ed.tag_names(i) == tags
+    assert ed._style_at("1.0") == {}
+    assert ed._style_at("1.1") == {"bold": True, "strike": True}
+    assert ed._style_at("1.2") == {"strike": True}
+    assert ed._style_at("1.3") == {"italic": True, "strike": True}
+    assert ed._style_at("1.4") == {}
+
+
+def test_apply_delta_range_unchanged_style_no_new_tags(tk_root):
+    # 对已全部加粗的内容重复应用 {"bold": True}：样式未变段整段跳过，
+    # 不得新建标签（_style_tags 数量不增长），原标签原样保留。
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("abc")
+    ed._apply_delta_range("1.0", "1.3", {"bold": True})
+    n_tags = len(ed._style_tags)
+    ed._apply_delta_range("1.0", "1.3", {"bold": True})
+    assert len(ed._style_tags) == n_tags
+    tags = [t for t in ed.tag_names("1.0") if t in ed._style_tags]
+    assert len(tags) == 1
+    assert ed._style_tags[tags[0]] == {"bold": True}
+
+
+def test_apply_delta_range_tags_images_in_segment(tk_root):
+    # 图片与文本同列处理：图片随所在段一起换标签（与旧逐字符实现一致）
+    from PIL import Image as PILImage
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("ab")
+    img_id = ed.insert_image(PILImage.new("RGBA", (20, 20), (255, 0, 0, 255)))
+    ed.insert_plain("cd")
+    img_idx = ed._index_of_image(img_id)
+    ed._apply_delta_range("1.0", "%s +1c" % img_idx, {"bold": True})          # ab+图片 加粗
+    ed._apply_delta_range(img_idx, "%s +2c" % img_idx, {"italic": True})      # 图片+c 斜体
+    assert ed._style_at("1.0") == {"bold": True}
+    assert ed._style_at(img_idx) == {"bold": True, "italic": True}
+    assert ed._style_at("%s +1c" % img_idx) == {"italic": True}
+    assert ed._style_at("%s +2c" % img_idx) == {}
+    img_tags = [t for t in ed.tag_names(img_idx) if t in ed._style_tags]
+    assert len(img_tags) == 1
+
+
+def test_apply_delta_range_emoji_uses_tk_indices(tk_root):
+    # emoji 在 Tk 索引中占多个单位（本机 Tk 8.6 为 3 个）；段边界必须以
+    # dump 返回的 Tk 索引为准，不得按 Python 字符串长度计数。
+    ed = editor.RichTextEditor(tk_root)
+    ed.insert_plain("A\U0001F600B")
+    ed._apply_delta_range("1.3", "1.4", {"bold": True})  # B 位于 Tk 索引 1.3
+    assert ed._style_at("1.0") == {}
+    assert ed._style_at("1.3") == {"bold": True}
+    ed._apply_delta_range("1.0", "1.4", {"strike": True})
+    for idx in ("1.0", "1.1", "1.2", "1.3"):
+        assert "strike" in ed._style_at(idx), idx
+    assert ed._style_at("1.3") == {"bold": True, "strike": True}
+
+
 def test_insert_inherits_current_style(tk_root):
     ed = editor.RichTextEditor(tk_root)
     ed._current_style = {"bold": True}

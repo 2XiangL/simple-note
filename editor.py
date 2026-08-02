@@ -4,6 +4,8 @@ import tkinter as tk
 
 import util
 
+_NO_SEG = object()  # _apply_delta_range 分段处理的哨兵：当前无打开的段
+
 
 class RichTextEditor(tk.Text):
     def __init__(self, master=None, family=util.DEFAULT_FAMILY, base_size=util.DEFAULT_SIZE, **kwargs):
@@ -216,16 +218,69 @@ class RichTextEditor(tk.Text):
             self._mark_dirty()
 
     def _apply_delta_range(self, start, end, delta):
-        idx = start
-        while self.compare(idx, "<", end):
-            current = self._style_at(idx)
-            new_style = util.merge_style(current, delta)
-            new_tag = self._get_or_create_tag(new_style)
-            for t in list(self.tag_names(idx)):
-                if t in self._style_tags:
-                    self.tag_remove(t, idx, "%s +1c" % idx)
-            self.tag_add(new_tag, idx, "%s +1c" % idx)
-            idx = self.index("%s +1c" % idx)
+        # 按同样式段批量打标：一次 dump 拉取范围内全部事件，每段只做常数次
+        # Tcl 往返（段末 compare + 至多 tag_remove/tag_add 各一次）；段样式
+        # 合并 delta 后不变则整段跳过，不新建标签。段边界一律用 dump 返回的
+        # Tk 索引（emoji 等按 Tk 单位计数），与逐字实现语义一致。
+        events = self.dump(start, end, text=True, tag=True, image=True, mark=False, window=False)
+        active = set()
+        # dump 不报告「范围起点已激活、范围终点仍激活」的标签（如整段同一
+        # 标签时起点无 tagon、终点无 tagoff），需用起点位置的标签播种活跃集合。
+        for t in self.tag_names(start):
+            if t in self._style_tags:
+                active.add(t)
+                break
+        seg_start = start
+        seg_tag = _NO_SEG  # 当前段样式标签；None 表示段已打开但无样式标签
+
+        def close_seg(until):
+            nonlocal seg_start, seg_tag
+            if seg_tag is _NO_SEG:
+                seg_start = until
+                return
+            if self.compare(until, "<=", seg_start):
+                seg_start = until
+                seg_tag = _NO_SEG
+                return
+            seg_style = self._style_tags.get(seg_tag) or {}
+            new_style = util.merge_style(seg_style, delta)
+            if new_style != seg_style:
+                new_tag = self._get_or_create_tag(new_style)
+                if seg_tag is not None:
+                    self.tag_remove(seg_tag, seg_start, until)
+                self.tag_add(new_tag, seg_start, until)
+            seg_start = until
+            seg_tag = _NO_SEG
+
+        i = 0
+        n = len(events)
+        while i < n:
+            index = events[i][2]
+            offs, ons, contents = [], [], 0
+            while i < n and events[i][2] == index:
+                kind, value, _ = events[i]
+                if kind == "tagoff" and value in self._style_tags:
+                    offs.append(value)
+                elif kind == "tagon" and value in self._style_tags:
+                    ons.append(value)
+                elif kind in ("text", "image"):
+                    contents += 1
+                i += 1
+            # 先按同索引的全部样式标签事件更新活跃集合（顺序无关：一字符一标签
+            # 不变量保证同索引至多一个 off 一个 on），再处理紧随的内容事件。
+            if offs or ons:
+                close_seg(index)
+                for t in offs:
+                    active.discard(t)
+                for t in ons:
+                    active.add(t)
+            for _ in range(contents):
+                tag = next(iter(active), None)
+                if tag != seg_tag:
+                    close_seg(index)
+                    seg_start = index
+                    seg_tag = tag
+        close_seg(end)
         self._on_cursor_move()
         self._mark_dirty()
 
