@@ -229,6 +229,9 @@ class RichTextEditor(tk.Text):
         for t in self.tag_names(start):
             if t in self._style_tags:
                 active.add(t)
+                # 正确性依赖「起点至多一个样式标签」不变量：播种只取第一个样式
+                # 标签，一旦该不变量被破坏（同一字符多个样式标签），此处 break
+                # 会丢弃其余标签，与下方 next(iter(active)) 的取法同源。
                 break
         seg_start = start
         seg_tag = _NO_SEG  # 当前段样式标签；None 表示段已打开但无样式标签
@@ -239,6 +242,10 @@ class RichTextEditor(tk.Text):
                 seg_start = until
                 return
             if self.compare(until, "<=", seg_start):
+                # 状态机里最不显然的一处：该守卫同时处理两类边界——(a) 同索引
+                # 重入（内容循环里的二次 close_seg，until 与 seg_start 相等）；
+                # (b) 空段保护（tagon/tagoff 紧邻时的空段不产生任何 Tcl 调用）。
+                # 勿删：删除后重入/空段会退化为越界 tag 操作。
                 seg_start = until
                 seg_tag = _NO_SEG
                 return
@@ -268,6 +275,10 @@ class RichTextEditor(tk.Text):
                 i += 1
             # 先按同索引的全部样式标签事件更新活跃集合（顺序无关：一字符一标签
             # 不变量保证同索引至多一个 off 一个 on），再处理紧随的内容事件。
+            # 非样式标签（sel 等系统标签）不打断分段，是本门控存在的原因：
+            # offs/ons 仅当样式标签切换时非空，才会 close_seg 并推进分段。
+            # 勿当作平凡优化删除——删掉后非样式标签的 tagon/tagoff 会误触
+            # close_seg(index)，把分段打成碎片。
             if offs or ons:
                 close_seg(index)
                 for t in offs:
@@ -275,7 +286,14 @@ class RichTextEditor(tk.Text):
                 for t in ons:
                     active.add(t)
             for _ in range(contents):
+                # 死路径防御：实测 dump 会把同标签的连续文本合并为单个 text 事件，
+                # 图片与文本索引互斥，故同索引内容事件恒 ≤1（contents 至多 1）；
+                # 且样式标签事件已在上面先行处理。此分支勿误读为「支持同索引
+                # 多内容事件」——若未来 dump 行为变化，这里不保证多事件正确性。
                 tag = next(iter(active), None)
+                # 依赖「一字符一标签」不变量：active 至多 1 个样式标签，直接取
+                # 第一个即当前段标签；若未来破坏该不变量（同一字符多个样式
+                # 标签），此处的取法行为不确定。
                 if tag != seg_tag:
                     close_seg(index)
                     seg_start = index
