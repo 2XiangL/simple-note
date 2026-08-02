@@ -11,7 +11,9 @@ class SearchDialog(tk.Toplevel):
         super().__init__(master)
         self.title("查找")
         self._editor_provider = editor_provider
+        self._last_ed = None
         self._build_ui()
+        self.bind("<Escape>", lambda e: self._on_close() or "break")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self):
@@ -23,13 +25,12 @@ class SearchDialog(tk.Toplevel):
         self._entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self._entry.bind("<Return>", lambda e: self._find_next())
         self._entry.bind("<Shift-Return>", lambda e: self._find_prev())
-        self._entry.bind("<Escape>", lambda e: self._on_close())
+        self._entry.bind("<Escape>", lambda e: self._on_close() or "break")
         ttk.Button(bar, text="上一个", width=6, command=self._find_prev).pack(side=tk.LEFT, padx=(6, 0))
         ttk.Button(bar, text="下一个", width=6, command=self._find_next).pack(side=tk.LEFT, padx=(6, 0))
         self._case_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            bar, text="区分大小写", variable=self._case_var, command=self._on_entry_change
-        ).pack(side=tk.LEFT, padx=6)
+        self._case_var.trace_add("write", lambda *_: self._on_entry_change())
+        ttk.Checkbutton(bar, text="区分大小写", variable=self._case_var).pack(side=tk.LEFT, padx=6)
         self._status = ttk.Label(bar, text="")
         self._status.pack(side=tk.LEFT, padx=4)
 
@@ -40,6 +41,12 @@ class SearchDialog(tk.Toplevel):
 
     def _editor(self):
         return self._editor_provider()
+
+    def _mark_highlighted(self, ed):
+        """记录最后高亮的编辑器；切换编辑器时清掉旧编辑器的高亮。"""
+        if self._last_ed is not None and self._last_ed is not ed and self._last_ed.winfo_exists():
+            self._last_ed.clear_search_highlight()
+        self._last_ed = ed
 
     def _on_entry_change(self):
         ed = self._editor()
@@ -52,6 +59,7 @@ class SearchDialog(tk.Toplevel):
             return
         case = self._case_var.get()
         n = len(ed.highlight_search(pattern, case, None))
+        self._mark_highlighted(ed)
         self._set_status("共 %d 处" % n if n else "无匹配")
 
     def _find_next(self):
@@ -69,13 +77,21 @@ class SearchDialog(tk.Toplevel):
             self._set_status("")
             return
         result = fn(ed, pattern, self._case_var.get())
-        self._set_status("%d/%d" % result if result else "无匹配")
+        if result:
+            self._mark_highlighted(ed)
+            self._set_status("%d/%d" % result)
+        else:
+            self._set_status("无匹配")
 
     def _set_status(self, text):
         self._status.configure(text=text)
 
+    def refresh(self):
+        """按当前编辑器重新计算状态与高亮（文档切换时由 app 调用）。"""
+        self._on_entry_change()
+
     def _on_close(self):
-        ed = self._editor()
-        if ed is not None and ed.winfo_exists():
-            ed.clear_search_highlight()
+        if self._last_ed is not None and self._last_ed.winfo_exists():
+            self._last_ed.clear_search_highlight()
+        self._last_ed = None
         self.destroy()
