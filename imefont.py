@@ -63,9 +63,9 @@ def set_composition_font(widget, family, point_size, bold=False, italic=False, s
         if not himc:
             return False
         try:
-            _imm32.ImmSetCompositionFontW(himc, ctypes.byref(lf))
+            ok = bool(_imm32.ImmSetCompositionFontW(himc, ctypes.byref(lf)))
         finally:
             _imm32.ImmReleaseContext(hwnd, himc)
-        return True
+        return ok
     except Exception:
         return False
