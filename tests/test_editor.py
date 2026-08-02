@@ -179,6 +179,26 @@ def test_insert_empty_string_is_noop(tk_root):
     assert after == before, "空串插入不应改变任何字符的样式"
 
 
+def test_insert_before_cursor_only_tags_inserted_text(tk_root):
+    # 光标前插入：Tk 会把光标按插入长度向后偏移，insert mark 越过了刚插入的
+    # 文本——end 必须按码点计数（旧行为），否则 tag_add 会误标插入点之后的
+    # 既有文本。仅插入点即光标时才可用 insert mark 作 end（emoji 安全）。
+    from editor import RichTextEditor
+    ed = RichTextEditor(tk_root)
+    ed.insert("end", "abc")                                  # a=1.0 b=1.1 c=1.2
+    ed.tag_add(ed._get_or_create_tag({"bold": True}), "1.0", "1.2")  # a、b 加粗
+    ed.mark_set("insert", "1.2")
+    ed.insert("1.0", "XY")  # 光标在 1.2，插入点在 1.0（光标前）
+    assert ed._style_at("1.0") == {}            # X 带基础样式
+    assert ed._style_at("1.1") == {}            # Y 带基础样式
+    assert ed._style_at("1.2") == {"bold": True}  # 原 a 保持 bold
+    assert ed._style_at("1.3") == {"bold": True}  # 原 b 保持 bold
+    assert ed._style_at("1.4") == {}            # 原 c 保持无样式
+    for i in ("1.2", "1.3"):
+        tags = [t for t in ed.tag_names(i) if t in ed._style_tags]
+        assert len(tags) == 1, "既有文本不得被叠加样式标签"
+
+
 def test_apply_style_no_selection_sets_current_style(tk_root):
     calls = []
     ed = editor.RichTextEditor(tk_root)

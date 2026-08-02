@@ -187,6 +187,7 @@ class RichTextEditor(tk.Text):
     # ---- 文本插入（自动套用当前样式）----
     def insert(self, index, chars, *args):
         start = self.index(index)
+        mark_before = self.index("insert")  # 快照插入前光标位置
         super().insert(index, chars, *args)
         if self._loading:
             self._mark_dirty()
@@ -196,13 +197,14 @@ class RichTextEditor(tk.Text):
             # 整体 no-op，防止把「start→光标」区间误套当前样式（回归守卫）。
             return
         tag = self._get_or_create_tag(self._current_style)
-        end = self.index("insert")
-        if self.compare(end, "<=", start):
-            # 插入点位于光标之后时 Tk 不移动 insert mark，end 取不到插入末尾
-            # （该场景无现成调用方，按码点回退计数保留旧行为）。
-            # 光标/末尾插入时 insert mark 已移到内容末尾：用 Tk 索引作 end，
-            # emoji 等按多单位计数的增补字符尾部不会再漏打标签（旧实现按
-            # Python 码点计数，emoji 占 3 个 Tk 单位时尾部字符无标签）。
+        if mark_before == start:
+            # 插入点即光标：Tk 把光标移到插入文本末尾，用 insert mark 作 end，
+            # emoji 等按多单位计数的增补字符尾部也不会漏打标签。
+            end = self.index("insert")
+        else:
+            # 光标前插入时 Tk 会把光标按插入长度向后偏移（越过刚插入的文本），
+            # 光标后插入时不动光标——两种情况 insert mark 都不能作 end，
+            # 一律按码点回退计数（旧行为，对光标前插入正确）。
             end = self.index("%s +%dc" % (start, len(chars)))
         self.tag_add(tag, start, end)
         self._pending = False
