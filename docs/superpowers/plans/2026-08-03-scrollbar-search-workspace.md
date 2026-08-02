@@ -1,6 +1,6 @@
 # 纵向滚动条 + 查找（Ctrl+F）+ 打开工作区 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 为 Simple Note 增加编辑框纵向滚动条、当前笔记浮动查找对话框（Ctrl+F）、以及递归加载目录内所有 `.snote` 的「打开工作区」功能。
 
@@ -35,7 +35,7 @@
 - Modify: `app.py:8`（imports）、`app.py:23-28`（NoteDocument）、`app.py:198-209`（_make_doc）、`app.py:284-285`（close_doc）、`app.py:301-305`（switch_to）
 - Test: `tests/test_app.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_app.py` 末尾追加：
 
@@ -57,12 +57,12 @@ def test_make_doc_wires_vertical_scrollbar(tk_root):
     assert sbs[0].cget("command")             # sb -> editor.yview
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `uv run pytest tests/test_app.py::test_make_doc_wires_vertical_scrollbar -v`
 Expected: FAIL — `AttributeError: 'NoteDocument' object has no attribute 'frame'`
 
-- [ ] **Step 3: 实现容器 frame**
+- [x] **Step 3: 实现容器 frame**
 
 `app.py:8` 导入区，`from tkinter import filedialog, messagebox` 之后加一行：
 
@@ -139,12 +139,12 @@ class NoteDocument:
         doc.frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `uv run pytest tests/test_app.py -v`
 Expected: 全部 PASS（含既有 `test_make_doc_destroys_editor_when_from_document_fails` 与 `test_open_doc_*`）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app.py tests/test_app.py
@@ -159,7 +159,7 @@ git commit -m "feat(app): 编辑框每文档容器 frame + 纵向滚动条"
 - Modify: `editor.py:34`（__init__ 内 tag 配置）、`editor.py:185` 附近（`_on_focus_in` 之后新增「查找」小节）
 - Test: `tests/test_editor.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_editor.py` 末尾追加：
 
@@ -221,12 +221,12 @@ def test_search_highlights_and_clear(tk_root):
     assert not ed.tag_ranges("search_cur")
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `uv run pytest tests/test_editor.py -k "find_matches or search" -v`
 Expected: FAIL — `AttributeError: 'RichTextEditor' object has no attribute 'find_matches'`
 
-- [ ] **Step 3: 实现查找原语**
+- [x] **Step 3: 实现查找原语**
 
 `editor.py` `__init__` 内，`self._widget_font = (family, base_size, "")` 一行（editor.py:34）之后加：
 
@@ -313,12 +313,12 @@ Expected: FAIL — `AttributeError: 'RichTextEditor' object has no attribute 'fi
         self.tag_remove("search_cur", "1.0", tk.END)
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `uv run pytest tests/test_editor.py -v`
 Expected: 全部 PASS（含既有样式/roundtrip 用例——查找 tag 不得污染样式逻辑）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add editor.py tests/test_editor.py
@@ -333,7 +333,7 @@ git commit -m "feat(editor): 查找原语 find_matches/search_next/search_prev �
 - Create: `search_dialog.py`
 - Test: `tests/test_search_dialog.py`（新建）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `tests/test_search_dialog.py`：
 
@@ -388,12 +388,12 @@ def test_dialog_close_clears_highlight(tk_root):
     assert not dlg.winfo_exists()
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `uv run pytest tests/test_search_dialog.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'search_dialog'`
 
-- [ ] **Step 3: 实现 SearchDialog**
+- [x] **Step 3: 实现 SearchDialog**
 
 新建 `search_dialog.py`：
 
@@ -482,12 +482,12 @@ class SearchDialog(tk.Toplevel):
         self.destroy()
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `uv run pytest tests/test_search_dialog.py -v`
 Expected: 4 个用例全部 PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add search_dialog.py tests/test_search_dialog.py
@@ -502,7 +502,7 @@ git commit -m "feat(ui): 查找对话框 SearchDialog（Enter/Shift+Enter/Esc，
 - Modify: `app.py:13-18`（imports）、`app.py:56` 附近（`_search_dlg` 初始化）、`app.py:89-122`（_build_menu）
 - Test: `tests/test_app.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_app.py` 末尾追加：
 
@@ -523,12 +523,12 @@ def test_open_search_dialog_singleton(tk_root):
     assert app._search_dlg is not first
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `uv run pytest tests/test_app.py::test_open_search_dialog_singleton -v`
 Expected: FAIL — `AttributeError: 'NoteApp' object has no attribute '_open_search_dialog'`
 
-- [ ] **Step 3: 实现入口与菜单**
+- [x] **Step 3: 实现入口与菜单**
 
 `app.py` 导入区，`from toolbar import FormatToolbar`（app.py:18）之后加：
 
@@ -570,12 +570,12 @@ from search_dialog import SearchDialog
         self._search_dlg.focus_entry()
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `uv run pytest tests/test_app.py -v`
 Expected: 全部 PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app.py tests/test_app.py
@@ -590,7 +590,7 @@ git commit -m "feat(app): Ctrl+F 查找入口与编辑菜单"
 - Modify: `app.py:220-242`（open_doc 重构 + 两个助手）
 - Test: `tests/test_app.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_app.py` 末尾追加：
 
@@ -635,12 +635,12 @@ def test_load_path_propagates_error(monkeypatch):
         app._load_path("C:/x/a.snote")
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `uv run pytest tests/test_app.py -k "find_open_doc or load_path" -v`
 Expected: FAIL — `AttributeError: 'NoteApp' object has no attribute '_find_open_doc'`
 
-- [ ] **Step 3: 抽取助手并重构 open_doc**
+- [x] **Step 3: 抽取助手并重构 open_doc**
 
 `app.py:220-242` 整个 `open_doc` 方法替换为：
 
@@ -676,12 +676,12 @@ Expected: FAIL — `AttributeError: 'NoteApp' object has no attribute '_find_ope
         self.add_doc(doc)
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `uv run pytest tests/test_app.py -v`
 Expected: 全部 PASS——特别是既有 `test_open_doc_dedupes_already_open_path`、`test_open_doc_dedupes_by_realpath_case`、`test_open_doc_ignores_unsaved_docs_in_dedupe` 保持绿色（重构行为等价）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app.py tests/test_app.py
@@ -696,7 +696,7 @@ git commit -m "refactor(app): 抽取 _find_open_doc/_load_path 打开助手"
 - Modify: `app.py:93` 附近（文件菜单项）、`app.py:121` 附近（绑定）、`app.py` open_doc 之后（open_workspace）
 - Test: `tests/test_app.py`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_app.py` 末尾追加：
 
@@ -782,12 +782,12 @@ def test_open_workspace_cancel_is_noop(monkeypatch):
 
 注意：`test_open_workspace_*` 用到 `os`，确认 `tests/test_app.py` 顶部已有 `import os`（既有文件已导入）。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `uv run pytest tests/test_app.py -k "open_workspace" -v`
 Expected: FAIL — `AttributeError: 'NoteApp' object has no attribute 'open_workspace'`
 
-- [ ] **Step 3: 实现 open_workspace 与菜单项**
+- [x] **Step 3: 实现 open_workspace 与菜单项**
 
 `app.py` 中 `open_doc` 方法之后新增：
 
@@ -839,12 +839,12 @@ Expected: FAIL — `AttributeError: 'NoteApp' object has no attribute 'open_work
         self.root.bind("<Control-Shift-O>", lambda e: self.open_workspace())
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `uv run pytest tests/test_app.py -v`
 Expected: 全部 PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add app.py tests/test_app.py
@@ -858,17 +858,17 @@ git commit -m "feat(app): 打开工作区——递归加载 .snote，判重跳�
 **Files:**
 - Modify: `AGENTS.md`
 
-- [ ] **Step 1: 跑全量测试**
+- [x] **Step 1: 跑全量测试**
 
 Run: `uv run pytest -q`
 Expected: 全部 PASS；与开工前基线（166 passed, 1 skipped）相比，新增用例全部通过，skipped 数不变（本机有显示器；headless 环境会多出 tk_root 用例的跳过，属预期）
 
-- [ ] **Step 2: 手动冒烟（可选，需显示器）**
+- [x] **Step 2: 手动冒烟（可选，需显示器）**
 
 Run: `uv run python main.py`
 验证：① 长文本出现纵向滚动条且滚动同步；② Ctrl+F 弹出查找框，Enter/Shift+Enter 循环定位、底纹正确、Esc 关闭后底纹消失；③ 文件→打开工作区 选择含嵌套 `.snote` 的目录，左侧列表按序加载。
 
-- [ ] **Step 3: 更新 AGENTS.md**
+- [x] **Step 3: 更新 AGENTS.md**
 
 `AGENTS.md`「Environment gotchas」中测试清单一条，把：
 
@@ -906,7 +906,7 @@ Run: `uv run python main.py`
 - `app.open_workspace` — 「打开工作区」：`askdirectory` + `Path.rglob("*.snote")` 递归批量载入，复用 `_find_open_doc`（判重跳过）/`_load_path`（load + _make_doc）两个助手（`open_doc` 同源）；坏文件收集进失败汇总弹框，不阻断其余加载。全程主线程同步，勿引入后台线程。
 ```
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add AGENTS.md
