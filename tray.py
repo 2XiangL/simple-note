@@ -46,11 +46,12 @@ class _HotkeyListener(threading.Thread):
 
     daemon = True
 
-    def __init__(self, modifiers, vk, on_triggered):
+    def __init__(self, modifiers, vk, on_triggered, on_status=None):
         super().__init__()
         self._modifiers = modifiers
         self._vk = vk
         self._on_triggered = on_triggered
+        self._on_status = on_status
         self._thread_id = 0
         self._ready = threading.Event()
         self._registered = False
@@ -81,6 +82,9 @@ class _HotkeyListener(threading.Thread):
         self._registered = ok
         self._error = ctypes.get_last_error() if not ok else 0
         self._ready.set()
+        if self._on_status is not None:
+            # 注册结果异步上报（仍在本监听线程），由 TrayController 封送回主线程
+            self._on_status(self._registered, self._error)
         if not ok:
             return
 
@@ -89,7 +93,13 @@ class _HotkeyListener(threading.Thread):
             while True:
                 # GetMessage 阻塞至有消息；返回 -1 出错、0 收到 WM_QUIT、正数为普通消息
                 ret = user32.GetMessageW(ctypes.byref(msg), None, 0, 0)
-                if ret <= 0:
+                if ret == 0:
+                    break
+                if ret < 0:
+                    # 记录错误码再退出，不再静默消失
+                    self._error = ctypes.get_last_error()
+                    print("warning: 热键消息泵 GetMessageW 失败"
+                          "（GetLastError=%d），热键监听已退出" % self._error)
                     break
                 if msg.message == _WM_HOTKEY:
                     self._on_triggered()
@@ -119,6 +129,8 @@ class TrayController:
         self._hidden = False
         self._icon = None
         self._hotkey = None
+        self._hotkey_registered = None  # None=尚未上报；True/False=热键注册状态
+        self._hotkey_error = 0
         self._calls = queue.Queue()
         self._polling = False
 
@@ -134,6 +146,13 @@ class TrayController:
     def is_running(self):
         return self._icon is not None
 
+    def status(self):
+        """返回 (托盘图标运行中, 热键注册状态, 热键错误码) 供诊断。
+
+        热键注册状态由监听线程异步上报（None=尚未上报）。
+        """
+        return (self._icon is not None, self._hotkey_registered, self._hotkey_error)
+
     def _start_impl(self):
         import sys
 
@@ -142,17 +161,11 @@ class TrayController:
 
         if sys.platform == "win32":
             self._hotkey = _HotkeyListener(
-                _MOD_CONTROL | _MOD_ALT, _VK_N, self._on_hotkey)
+                _MOD_CONTROL | _MOD_ALT, _VK_N, self._on_hotkey,
+                on_status=lambda reg, err: self._marshal(
+                    lambda: self._on_hotkey_status(reg, err)),
+            )
             self._hotkey.start()
-            if self._hotkey._ready.wait(timeout=2):
-                if not self._hotkey._registered:
-                    err = self._hotkey._error
-                    if err == 1409:     # ERROR_HOTKEY_ALREADY_REGISTERED
-                        print("warning: 全局热键 Ctrl+Alt+N 已被其他程序占用"
-                              "（通常是上一个本程序实例仍驻留托盘，请从托盘菜单“退出”后再试）")
-                    else:
-                        print("warning: 全局热键 Ctrl+Alt+N 注册失败"
-                              "（GetLastError=%d）" % err)
 
         menu = pystray.Menu(
             MenuItem("显示/隐藏", self._on_menu_toggle),
@@ -196,6 +209,19 @@ class TrayController:
     # ---- 外部线程入口（仅入队，绝不碰 Tk）----
     def _on_hotkey(self):
         self._marshal(self.toggle_visibility)
+
+    def _on_hotkey_status(self, registered, error):
+        # 主线程消费热键状态消息：替代原启动时最长 2s 的阻塞等待，
+        # 注册结果（含失败原因）异步经队列回主线程记录/告警。
+        self._hotkey_registered = registered
+        self._hotkey_error = error
+        if not registered:
+            if error == 1409:     # ERROR_HOTKEY_ALREADY_REGISTERED
+                print("warning: 全局热键 Ctrl+Alt+N 已被其他程序占用"
+                      "（通常是上一个本程序实例仍驻留托盘，请从托盘菜单“退出”后再试）")
+            else:
+                print("warning: 全局热键 Ctrl+Alt+N 注册失败"
+                      "（GetLastError=%d）" % error)
 
     def _on_menu_toggle(self, _icon=None, _item=None):
         self._marshal(self.toggle_visibility)

@@ -59,3 +59,30 @@ def test_tray_on_hotkey_marshals_via_queue():
     tc._drain()              # 主线程消费 -> toggle -> hide
     assert tc._hidden is True
     assert root.withdrawed is True
+
+
+def test_hotkey_status_reported_asynchronously_via_queue():
+    # 启动不再阻塞等待热键注册：监听线程的注册结果经 _marshal 封送，
+    # 主线程 _drain 消费后才更新 status()（消费前保持未知 None）。
+    root = _FakeRoot()
+    tc = tray.TrayController(root, on_quit=lambda: None, on_hide=lambda: None)
+    assert tc.status() == (False, None, 0)
+    marshal_status = lambda reg, err: tc._marshal(lambda: tc._on_hotkey_status(reg, err))
+    marshal_status(False, 1409)                      # 模拟注册失败（热键被占用）
+    assert tc.status() == (False, None, 0)           # 尚未消费
+    tc._drain()
+    assert tc.status() == (False, False, 1409)
+    marshal_status(True, 0)                          # 模拟注册成功
+    tc._drain()
+    assert tc.status() == (False, True, 0)
+
+
+def test_hotkey_status_failure_prints_warning(capsys):
+    root = _FakeRoot()
+    tc = tray.TrayController(root, on_quit=lambda: None, on_hide=lambda: None)
+    tc._on_hotkey_status(False, 1409)
+    out = capsys.readouterr().out
+    assert "已被其他程序占用" in out
+    tc._on_hotkey_status(False, 5)
+    out = capsys.readouterr().out
+    assert "GetLastError=5" in out
