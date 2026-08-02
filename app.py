@@ -241,26 +241,32 @@ class NoteApp:
         doc = self._make_doc()
         self.add_doc(doc)
 
+    def _find_open_doc(self, path):
+        """按 normcase/realpath 判重：返回已打开同一文件的 doc，未打开返回 None。"""
+        key = os.path.normcase(os.path.realpath(path))
+        for doc in self.docs:
+            # doc.path 为 None（未保存）的文档不参与判重
+            if doc.path is not None and os.path.normcase(os.path.realpath(doc.path)) == key:
+                return doc
+        return None
+
+    def _load_path(self, path):
+        """从磁盘载入并构造 doc；失败抛异常由调用方处理。"""
+        document, blobs = snote.load_document(path)
+        return self._make_doc(path=path, title=os.path.basename(path), document=document, blobs=blobs)
+
     def open_doc(self):
         path = filedialog.askopenfilename(title="打开笔记", filetypes=NOTE_FILTER)
         if not path:
             return
-        key = os.path.normcase(os.path.realpath(path))
-        for doc in self.docs:
-            # 已在打开列表中的文档（doc.path 可能为 None=未保存，需过滤）
-            if doc.path is not None and os.path.normcase(os.path.realpath(doc.path)) == key:
-                self.switch_to(doc)
-                return
-        try:
-            document, blobs = snote.load_document(path)
-        except ValueError as exc:
-            messagebox.showerror("打开失败", "无法打开该文件：%s" % exc)
+        existing = self._find_open_doc(path)
+        if existing is not None:
+            self.switch_to(existing)
             return
-        title = os.path.basename(path)
         try:
-            doc = self._make_doc(path=path, title=title, document=document, blobs=blobs)
+            doc = self._load_path(path)
         except Exception as exc:
-            messagebox.showerror("打开失败", "解析笔记内容失败：%s" % exc)
+            messagebox.showerror("打开失败", "无法打开该文件：%s" % exc)
             return
         doc.dirty = False
         self.add_doc(doc)

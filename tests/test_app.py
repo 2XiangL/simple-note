@@ -214,3 +214,43 @@ def test_switch_to_without_search_dialog(tk_root):
     app.switch_to(d2)  # 不抛
     app._search_dlg = SimpleNamespace(winfo_exists=lambda: False, refresh=lambda: None)
     app.switch_to(d1)  # 不抛、不调用 refresh
+
+
+def test_find_open_doc_matches_by_realpath(tmp_path):
+    # normcase/realpath 判重；path 为 None 的未保存文档不参与
+    from app import NoteApp
+    f = tmp_path / "a.snote"
+    f.write_bytes(b"x")
+    app = NoteApp.__new__(NoteApp)
+    existing = _FakeDoc(path=str(f))
+    app.docs = [existing, _FakeDoc(path=None)]
+    assert app._find_open_doc(str(f)) is existing
+    assert app._find_open_doc(str(tmp_path / "other.snote")) is None
+
+
+def test_load_path_builds_doc(monkeypatch):
+    # _load_path = load_document + _make_doc，失败原样抛
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    made = []
+    monkeypatch.setattr(
+        "app.snote.load_document", lambda p: ({"format": "snote", "styles": {}, "ops": [], "images": {}}, {})
+    )
+    monkeypatch.setattr(app, "_make_doc", lambda **kw: made.append(kw) or SimpleNamespace(dirty=True))
+    doc = app._load_path("C:/x/a.snote")
+    assert doc.dirty is True  # _load_path 返回 _make_doc 的构造结果
+    assert made[0]["path"] == "C:/x/a.snote"
+    assert made[0]["title"] == "a.snote"
+    assert made[0]["document"]["format"] == "snote"
+
+
+def test_load_path_propagates_error(monkeypatch):
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+
+    def boom(p):
+        raise ValueError("bad")
+
+    monkeypatch.setattr("app.snote.load_document", boom)
+    with pytest.raises(ValueError):
+        app._load_path("C:/x/a.snote")
