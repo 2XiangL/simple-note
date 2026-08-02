@@ -339,3 +339,29 @@ def test_corrupt_entry_in_memory_does_not_crash_tick():
     s._daily = [{"id": "y", "label": "坏", "hour": 99, "minute": 0}]
     s.arm(datetime(2026, 8, 2, 7, 0))
     assert s.tick(datetime(2026, 8, 2, 8, 0)) == []   # 不抛，也不触发
+
+
+def test_oneshot_corrupt_entry_dropped_not_zombie():
+    s = ReminderScheduler()
+    s._oneshot = [{"id": "z", "label": "坏", "when": "不是日期", "fired": False}]
+    s.tick(datetime(2026, 1, 1, 0, 0, 0))
+    assert s._oneshot == [], "不可解析条目应被丢弃而非永久保留"
+
+
+def test_oneshot_missing_key_dropped_not_keyerror():
+    s = ReminderScheduler()
+    s._oneshot = [
+        {"id": "a", "label": "缺 when 键", "fired": False},
+        {"id": "b", "when": "2026-01-01T00:00:00", "fired": False},
+    ]
+    assert s.tick(datetime(2026, 1, 1, 0, 0, 0)) == []
+    assert s._oneshot == [], "缺键条目应被丢弃，且不抛 KeyError 中断整轮 tick"
+
+
+def test_tick_before_arm_daily_still_works():
+    s = ReminderScheduler()
+    s.add_daily("早会", 9, 0)
+    evs = s.tick(datetime(2026, 1, 1, 8, 0, 0))   # 未 arm，首次 tick 设基准
+    assert evs == []
+    evs = s.tick(datetime(2026, 1, 1, 9, 0, 30))
+    assert any(e["kind"] == "daily" for e in evs), "未显式 arm 时每日提醒应仍可用"

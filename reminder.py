@@ -186,6 +186,8 @@ class ReminderScheduler:
     def tick(self, now=None):
         """推进状态，返回到期事件列表。事件形如 {"kind","title","message"}。"""
         now = now or self._now_fn()
+        if self._last_tick is None:
+            self._last_tick = now
         events = []
         try:
             events.extend(self._tick_pomodoro(now))
@@ -225,11 +227,12 @@ class ReminderScheduler:
         remaining = []
         for e in self._oneshot:
             try:
-                fired = now >= datetime.fromisoformat(e["when"])
-            except (ValueError, TypeError):
-                fired = False
-            if fired:
-                events.append({"kind": "oneshot", "title": "提醒", "message": e["label"]})
+                when = datetime.fromisoformat(e["when"])
+                label = e["label"]
+            except (ValueError, TypeError, KeyError):
+                continue
+            if now >= when:
+                events.append({"kind": "oneshot", "title": "提醒", "message": label})
             else:
                 remaining.append(e)
         self._oneshot = remaining
