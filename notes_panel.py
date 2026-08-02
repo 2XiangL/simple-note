@@ -38,9 +38,12 @@ class NotesPanel(ttk.Frame):
             idx = self._docs.index(doc)
         except ValueError:
             return
+        was_selected = idx in self.listbox.curselection()
         self._docs.pop(idx)
         self.listbox.delete(idx)
-        if self._docs:
+        # 仅当被移除行原是选中行时才重选首行；移除未选中行时 Tk 的
+        # 单选 selection 会跟随索引，保持原选中项不变。
+        if was_selected and self._docs:
             self.select(self._docs[0])
 
     def refresh(self, doc):

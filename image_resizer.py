@@ -25,7 +25,7 @@ class ImageResizer:
         self._drag_role = None
         self._drag_start = None
 
-        self.win = tk.Toplevel()
+        self.win = tk.Toplevel(self.editor.winfo_toplevel())
         self.win.overrideredirect(True)
         self.win.attributes("-topmost", True)
         self.win.configure(bg=_KEY)
@@ -50,7 +50,8 @@ class ImageResizer:
         for seq in ("<Configure>", "<MouseWheel>", "<Up>", "<Down>", "<Prior>", "<Next>"):
             cbid = editor.bind(seq, self._on_editor_changed, add="+")
             self._binds.append((seq, cbid))
-        self.canvas.bind("<FocusOut>", lambda e: self._confirm())
+        # 不自动确认：焦点意外离开（如临时切窗）不应静默确认缩放，
+        # 只能显式确认（Enter）/取消（Esc/Delete）。
 
     def _live_size(self):
         return self.editor.image_display_size(self.img_id) or (self.orig_w, self.orig_h)

@@ -265,6 +265,38 @@ def test_toolbar_size_box_refreshes_on_cursor_move(tk_root):
     assert tb.size_var.get() == str(util.DEFAULT_SIZE)
 
 
+class _FakeToolbarEditor:
+    def __init__(self):
+        self.applied = []
+
+    def set_on_cursor_style(self, cb):
+        pass
+
+    def apply_style_to_selection(self, delta):
+        self.applied.append(delta)
+
+
+def test_toolbar_size_clamped_to_valid_range(tk_root):
+    # 自由输入钳制到 1–400：0/负数（Tk 视为像素字体）与巨大值不再生效
+    import toolbar
+    ed = _FakeToolbarEditor()
+    tb = toolbar.FormatToolbar(tk_root)
+    tb.set_editor(ed)
+    tb.size_var.set("0")
+    tb.on_size()
+    tb.size_var.set("-5")
+    tb.on_size()
+    tb.size_var.set("99999")
+    tb.on_size()
+    assert ed.applied == [{"size": 1}, {"size": 1}, {"size": 400}]
+    tb.size_var.set("abc")
+    tb.on_size()
+    assert len(ed.applied) == 3  # 非数字忽略
+    tb.size_var.set("12")
+    tb.on_size()
+    assert ed.applied[-1] == {"size": 12}
+
+
 def test_delete_image_removes_from_text_and_registry(tk_root):
     from PIL import Image as PILImage
     ed = editor.RichTextEditor(tk_root)
@@ -635,5 +667,52 @@ def test_double_click_on_text_does_not_resize(tk_root):
         result = ed._on_double_click(_FakeClick(bbox[0] + 1, bbox[1] + 1))
         assert result is None
         assert clicked == []
+    finally:
+        top.destroy()
+
+
+def _open_resizer(tk_root):
+    import tkinter as tk
+    from PIL import Image as PILImage
+    top = tk.Toplevel(tk_root)
+    ed = editor.RichTextEditor(top)
+    ed.pack()
+    tk_root.update()
+    ed.insert_plain("ab")
+    img_id = ed.insert_image(PILImage.new("RGBA", (40, 30), (255, 0, 0, 255)))
+    ed.begin_resize(img_id)
+    tk_root.update()
+    return top, ed, img_id
+
+
+def test_resizer_toplevel_uses_editor_master(tk_root):
+    # 缩放浮层 Toplevel 必须挂在编辑器所属顶层下，而非隐式默认 root
+    top, ed, _img_id = _open_resizer(tk_root)
+    try:
+        assert ed._resizer is not None
+        assert ed._resizer.win.master is top
+    finally:
+        top.destroy()
+
+
+def test_resizer_focusout_does_not_auto_confirm(tk_root):
+    # 焦点离开不再自动确认缩放（只能 Enter 确认 / Esc、Delete 取消）
+    top, ed, img_id = _open_resizer(tk_root)
+    try:
+        r = ed._resizer
+        assert not r.canvas.bind("<FocusOut>")
+        r._confirm()
+        assert ed._resizer is None
+        assert ed.image_display_size(img_id) == (40, 30)
+    finally:
+        top.destroy()
+
+
+def test_resizer_cancel_restores_original_size(tk_root):
+    top, ed, img_id = _open_resizer(tk_root)
+    try:
+        ed._resizer._cancel()
+        assert ed._resizer is None
+        assert ed.image_display_size(img_id) == (40, 30)  # 恢复原尺寸
     finally:
         top.destroy()
