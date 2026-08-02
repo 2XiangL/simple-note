@@ -216,6 +216,38 @@ def test_switch_to_without_search_dialog(tk_root):
     app.switch_to(d1)  # 不抛、不调用 refresh
 
 
+def test_close_active_doc_with_search_dialog_open(tk_root):
+    # 查找对话框开着时关闭当前活动文档：不抛异常、新活动文档无陈旧高亮
+    import settings
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    app.root = tk_root
+    app.editor_host = tk_root
+    app._line_spacing = settings.DEFAULT_LINE_SPACING
+    d1 = app._make_doc()
+    d2 = app._make_doc()
+    d1.editor.insert_plain("hello hello")
+    d2.editor.insert_plain("world")
+    app.docs = [d1, d2]
+    app.active = None
+    app.panel = SimpleNamespace(select=lambda d: None, remove=lambda d: None, refresh=lambda d: None)
+    app.toolbar = SimpleNamespace(set_editor=lambda e: None)
+    app._search_dlg = None
+    app.switch_to(d1)
+    app._open_search_dialog()
+    dlg = app._search_dlg
+    dlg._var.set("hello")
+    dlg._find_next()
+    assert d1.editor.tag_ranges("search_all")  # d1 已高亮
+    # insert_plain 的 <<Modified>> 事件延迟触发，close 前显式复位 dirty
+    d1.dirty = False
+    app.close_doc(d1)  # 关闭活动文档（对话框还开着）
+    # 切到 d2 触发 refresh："hello" 不匹配 "world"，不得残留高亮，也不得抛异常
+    assert not d2.editor.tag_ranges("search_all")
+    dlg._on_close()
+    assert not d2.editor.tag_ranges("search_all")  # 关闭对话框清理剩余高亮
+
+
 def test_find_open_doc_matches_by_realpath(tmp_path):
     # normcase/realpath 判重；path 为 None 的未保存文档不参与
     from app import NoteApp
