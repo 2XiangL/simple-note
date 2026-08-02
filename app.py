@@ -277,7 +277,11 @@ class NoteApp:
         directory = filedialog.askdirectory(title="打开工作区")
         if not directory:
             return
-        files = sorted(Path(directory).rglob("*.snote"), key=lambda p: os.path.normcase(str(p)))
+        try:
+            files = sorted(Path(directory).rglob("*.snote"), key=lambda p: os.path.normcase(str(p)))
+        except OSError as exc:
+            messagebox.showerror("打开工作区", "扫描目录失败：%s" % exc)
+            return
         if not files:
             messagebox.showinfo("打开工作区", "该目录下没有 .snote 笔记文件。")
             return
@@ -292,7 +296,7 @@ class NoteApp:
             try:
                 doc = self._load_path(path)
             except Exception as exc:
-                failures.append("%s：%s" % (p.name, exc))
+                failures.append("%s：%s" % (os.path.relpath(p, directory), exc))
                 continue
             doc.dirty = False
             self.add_doc(doc)

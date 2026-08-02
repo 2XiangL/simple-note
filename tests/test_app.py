@@ -278,8 +278,11 @@ def test_open_workspace_loads_nested_snote(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "add_doc", lambda d: added.append(d))
     monkeypatch.setattr("app.messagebox.showwarning", lambda *a, **k: None)  # 防 bug 时真弹框阻塞
     app.open_workspace()
-    got = sorted(os.path.normcase(d.path) for d in added)
-    want = sorted(os.path.normcase(str(p)) for p in (tmp_path / "a.snote", sub / "b.snote"))
+    got = [os.path.normcase(d.path) for d in added]
+    want = [
+        os.path.normcase(str(tmp_path / "a.snote")),
+        os.path.normcase(str(sub / "b.snote")),
+    ]
     assert got == want
     assert all(d.dirty is False for d in added)
 
@@ -334,3 +337,19 @@ def test_open_workspace_cancel_is_noop(monkeypatch):
     app.docs = []
     monkeypatch.setattr("app.filedialog.askdirectory", lambda **k: "")
     app.open_workspace()  # 不抛、不弹框
+
+
+def test_open_workspace_failure_list_truncated(tmp_path, monkeypatch):
+    # 失败超过 10 条时截断并显示总数
+    from app import NoteApp
+    for i in range(12):
+        (tmp_path / ("bad%d.snote" % i)).write_bytes(b"not a zip")
+    app = NoteApp.__new__(NoteApp)
+    app.docs = []
+    shown = []
+    monkeypatch.setattr("app.filedialog.askdirectory", lambda **k: str(tmp_path))
+    monkeypatch.setattr("app.messagebox.showwarning", lambda *a, **k: shown.append(a))
+    app.open_workspace()
+    assert shown
+    assert "失败 12 个" in str(shown[0])
+    assert "…等 12 个" in str(shown[0])
