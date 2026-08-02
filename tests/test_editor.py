@@ -322,7 +322,7 @@ def test_delete_marks_dirty(tk_root):
     seen = []
     ed.set_on_dirty(lambda: seen.append(1))
     ed.tk.call(ed._w, "delete", "1.0", "1.3")   # 模拟 Tcl 层删除（Backspace/剪切同路径）
-    ed.update_idletasks()                        # 派发 <<Modified>> 虚拟事件
+    tk_root.update()                             # 派发 <<Modified>> 虚拟事件
     assert seen, "Tcl 层删除未触发 dirty"
 
 
@@ -331,18 +331,18 @@ def test_from_document_not_dirty(tk_root):
     ed = editor.RichTextEditor(tk_root)
     doc = snote.build_document({}, [{"k": "text", "text": "载入的内容"}], {})
     ed.from_document(doc, {})
-    ed.update_idletasks()
+    tk_root.update()
     seen = []
     ed.set_on_dirty(lambda: seen.append(1))
     ed.tk.call(ed._w, "delete", "1.0", "1.1")
-    ed.update_idletasks()
+    tk_root.update()
     assert seen, "载入后应能正常标脏（说明 _loading 未卡死）"
     # 再验证载入本身不脏：新建一个，载入后不操作，不应有脏回调
     ed2 = editor.RichTextEditor(tk_root)
     seen2 = []
     ed2.set_on_dirty(lambda: seen2.append(1))
     ed2.from_document(doc, {})
-    ed2.update_idletasks()
+    tk_root.update()
     assert not seen2, "载入文档不应标脏"
 
 
@@ -355,6 +355,25 @@ def test_paste_text_is_tagged(tk_root):
     ed.clipboard_clear()
     ed.clipboard_append("XY")
     ed.event_generate("<<Paste>>")
-    ed.update_idletasks()
+    tk_root.update()
     tags = [t for t in ed.tag_names("end-2c") if t in ed._style_tags]
     assert tags, "粘贴的文本未打标签"
+
+
+def test_paste_over_selection_is_tagged(tk_root):
+    # 粘贴覆盖选区时 tk_textPaste 会删选区并从 sel.first 插入；若以 insert mark
+    # （sel.last）记录起点，粘贴后 insert 索引未前进，晚绑定补标会失效。
+    from editor import RichTextEditor
+    ed = RichTextEditor(tk_root)
+    ed.insert("end", "abcd")
+    ed.tag_add("sel", "1.2", "1.4")
+    ed.mark_set("insert", "1.4")
+    ed.clipboard_clear()
+    ed.clipboard_append("XY")
+    ed.event_generate("<<Paste>>")
+    tk_root.update()
+    # 选区被替换，粘贴的两字符都需带样式标签
+    tags = [t for t in ed.tag_names("1.2") if t in ed._style_tags]
+    assert tags, "粘贴覆盖选区后文本未打标签"
+    tags2 = [t for t in ed.tag_names("1.3") if t in ed._style_tags]
+    assert tags2, "粘贴覆盖选区后第二个字符未打标签"

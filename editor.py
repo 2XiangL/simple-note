@@ -69,18 +69,12 @@ class RichTextEditor(tk.Text):
             return
         self._mark_dirty()
 
-    def update_idletasks(self):
-        # <<Modified>> 虚拟事件由 Tk 异步入队，而 update idletasks 不派发事件队列，
-        # 导致 Tcl 层删除/粘贴的脏标记要拖到下一次事件循环才生效。这里在确有未处理
-        # 的 modified 事件时改用 update() 立即排空（_on_modified 复位标志后即完成），
-        # 其余情况保持原语义。
-        try:
-            if self.edit_modified():
-                self.tk.call("update")
-                return
-        except tk.TclError:
-            pass
-        super().update_idletasks()
+    def _drain_modified(self):
+        # <<Modified>> 虚拟事件由 Tk 异步入队，update idletasks 不派发事件队列；
+        # 这里在确有未处理 modified 事件时用 update() 排空，仅供 from_document
+        # 清栈使用（_on_modified 复位标志后即完成）。
+        if self.edit_modified():
+            self.tk.call("update")
 
     def destroy(self):
         # 清理实例级晚绑定标签，避免绑定表泄漏
@@ -355,7 +349,7 @@ class RichTextEditor(tk.Text):
         # 保证载入后首次编辑才触发脏回调。
         self._suppress_modified += 1
         try:
-            self.update_idletasks()
+            self._drain_modified()
         finally:
             self._suppress_modified -= 1
         self.edit_reset()
@@ -432,7 +426,11 @@ class RichTextEditor(tk.Text):
             self.insert_image(img, max_width=max_width)
             return "break"
         # 文本粘贴：记录位置，待 Tcl 类绑定插入后由晚绑定 _stamp_typed_range 补打标签
-        self._type_start = self.index("insert")
+        # 有选区时 tk_textPaste 会删选区并从 sel.first 插入，故以 sel.first 为准
+        if self.tag_ranges("sel"):
+            self._type_start = self.index("sel.first")
+        else:
+            self._type_start = self.index("insert")
 
     def _on_double_click(self, event):
         idx = self.index("@%d,%d" % (event.x, event.y))
