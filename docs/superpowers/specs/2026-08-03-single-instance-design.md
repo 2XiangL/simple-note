@@ -35,8 +35,9 @@ Tk-free、Windows 优先，风格对齐 `tray.py`/`imefont.py`：非 Windows 或
 |---|---|
 | `acquire(name=MUTEX_NAME)` | `CreateMutexW(None, FALSE, name)`。首实例返回互斥体句柄（须持有至进程退出）；`GetLastError() == ERROR_ALREADY_EXISTS` 返回 `None`；非 Windows 或 API 异常 → stderr 警告并返回哨兵值放行（fail-open：宁可偶尔多开，不可启动失败） |
 | `release(handle)` | `CloseHandle`（退出与测试用；哨兵值为 no-op） |
-| `activate_existing(timeout_ms=2000, msg_name=ACTIVATE_MSG_NAME)` | `RegisterWindowMessageW(msg_name)` 后 `SendMessageTimeoutW(HWND_BROADCAST, msg, 0, 0, SMTO_NORMAL, timeout_ms)`；尽力而为返回 bool，任何失败静默返回 False。`msg_name` 为测试缝隙（默认值不变），测试用唯一名避免惊动开发机上运行中的真实实例 |
-| `SingleInstanceListener(threading.Thread)` | 守护线程：隐藏**顶层**窗口 + GetMessageW 消息泵；收到注册消息调用 `on_activate()`（仍在监听线程内）。构造参数 `on_activate`，可选 `msg_name=ACTIVATE_MSG_NAME`（同上测试缝隙） |
+| `activate_existing(timeout_ms=2000, msg_name=ACTIVATE_MSG_NAME)` | `RegisterWindowMessageW(msg_name)` 后 `SendMessageTimeoutW(HWND_BROADCAST, msg, 0, 0, SMTO_NORMAL\|SMTO_ABORTIFHUNG, timeout_ms)`；尽力而为返回 bool，任何失败静默返回 False。`msg_name` 为测试缝隙（默认值不变），测试用唯一名避免惊动开发机上运行中的真实实例 |
+| `set_activation_handler(fn)` | 注册模块级窗口激活回调（可传 None 重置），由 `NoteApp` 就绪时调用；监听线程触发时经此回调封送回主线程 |
+| `SingleInstanceListener(threading.Thread)` | 守护线程：隐藏**顶层**窗口 + GetMessageW 消息泵；收到注册消息调用 `on_activate`（仍在监听线程内）。构造参数 `on_activate`（可省略，省略时默认分派到 `set_activation_handler` 注册的模块级回调），可选 `msg_name=ACTIVATE_MSG_NAME`（同上测试缝隙） |
 
 关键点：监听窗口必须是普通隐藏顶层窗口——message-only 窗口（HWND_MESSAGE）收不到 `HWND_BROADCAST` 广播。
 
@@ -68,6 +69,8 @@ def main():
 
 线程模型复刻热键监听：**监听线程只入队、绝不碰 Tk**；主线程消费。
 
+**监听线程在 `main.py` 中启动，早于一切 Tk 创建**（acquire 成功紧接启动）——消除启动竞态：若第二实例在首个实例的 Tk 初始化窗口（约 0.5-2s）内启动，广播仍会被监听线程收到。此时窗口激活回调可能尚未注册，激活为 no-op——窗口本来也未显示，无感知影响。
+
 封送复用 `TrayController` 已有的 `_calls` 队列 + `root.after(50ms)` 轮询 `_drain`。`TrayController` 增加一行公开入口：
 
 ```python
@@ -76,20 +79,15 @@ def enqueue(self, fn):
     self._calls.put(fn)
 ```
 
-`app.NoteApp.__init__` 在 `self.tray.start()` 之后接线：
+激活回调经**模块级注册**接线（避免 main.py 持有 app 引用）：
 
-```python
-self._si_listener = SingleInstanceListener(
-    on_activate=lambda: self.tray.enqueue(self.tray.show))
-self._si_listener.start()
-```
+- `main.py`：`_LISTENER = SingleInstanceListener()`（省略 on_activate，默认分派到模块级回调）+ `.start()`；`mainloop()` 返回后 `_LISTENER.stop()`
+- `app.NoteApp.__init__`（`self.tray.start()` 之后）：`singleinstance.set_activation_handler(lambda: self.tray.enqueue(self.tray.show))`
+- `_real_quit` 不再负责 stop 监听线程（已移至 main.py 的 mainloop 退出路径）
 
-- `tray.show()` 已含 `_hidden=False` + `deiconify` + `lift` + `focus_force`：托盘隐藏、最小化、普通可见三种状态都能恢复并置前，且 `_hidden` 状态机同步
-- 窗口本来就可见时 `show()` 等价于 lift+focus，行为正确
+`tray.show()` 已含 `_hidden=False` + `deiconify` + `lift` + `focus_force`：托盘隐藏、最小化、普通可见三种状态都能恢复并置前，且 `_hidden` 状态机同步。窗口本来就可见时 `show()` 等价于 lift+focus，行为正确。
 
-退出清理：`_real_quit` 里现有 `self.tray.stop()` 旁增加 `self._si_listener.stop()`。
-
-时序：第二实例广播后立即退出；第一实例监听线程收到消息 → 入队 → 主线程下一次 50ms 轮询消费 → 窗口置前。主线程卡在模态框时激活延迟到模态框关闭，可接受。
+时序：第二实例广播后立即退出；第一实例监听线程收到消息 → 默认分派 → 模块级回调（enqueue）→ 主线程下一次 50ms 轮询消费 → 窗口置前。主线程卡在模态框时激活延迟到模态框关闭，可接受。
 
 ## 错误处理
 

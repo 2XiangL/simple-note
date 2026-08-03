@@ -497,13 +497,56 @@ git commit -m "feat(tray): enqueue 公开入队口供单实例监听线程封送
 
 ---
 
-### Task 5: `main.py` 入口守卫（第二实例分流）
+### Task 5: `main.py` 入口守卫 + 监听线程提前启动（消除竞态）
+
+> 代码审查发现原设计存在启动竞态：互斥体在 main.py 最前面获取，但监听窗口要等 NoteApp.__init__ 尾部才创建——首实例启动窗口（约 0.5-2s）内二次启动会静默退出但窗口不激活。用户已确认：**监听线程提前到 main.py，acquire 成功后立即启动（早于 Tk）**。激活经模块级回调注册接线，NoteApp 不持有监听线程。
 
 **Files:**
+- Modify: `singleinstance.py`（加 `set_activation_handler`/`_dispatch_activation`；监听器 `on_activate` 改为可选）
 - Modify: `main.py`
 - Test: `tests/test_main.py`（新建）
+- Test: `tests/test_singleinstance.py`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: 写失败测试（singleinstance 部分）**
+
+向 `tests/test_singleinstance.py` 追加：
+
+```python
+def test_activation_handler_dispatch(monkeypatch):
+    # 监听器省略 on_activate 时：默认分派到 set_activation_handler 注册的模块级回调
+    calls = []
+    monkeypatch.setattr(singleinstance, "_activation_handler", None)
+    singleinstance.set_activation_handler(lambda: calls.append(1))
+    li = singleinstance.SingleInstanceListener()      # 不传 on_activate
+    li._msg_id = 42
+    li._handle_message(42)
+    assert calls == [1]
+    singleinstance.set_activation_handler(None)       # 清理，防测试间污染
+
+
+def test_explicit_on_activate_beats_global_handler(monkeypatch):
+    # 显式传入 on_activate 优先于模块级回调
+    global_calls = []
+    local_calls = []
+    monkeypatch.setattr(singleinstance, "_activation_handler", None)
+    singleinstance.set_activation_handler(lambda: global_calls.append(1))
+    li = singleinstance.SingleInstanceListener(on_activate=lambda: local_calls.append(1))
+    li._msg_id = 7
+    li._handle_message(7)
+    assert local_calls == [1]
+    assert global_calls == []
+    singleinstance.set_activation_handler(None)
+
+
+def test_activation_handler_unset_is_noop(monkeypatch):
+    # 未注册 handler 时收到广播是 no-op（启动窗口内广播不炸）
+    monkeypatch.setattr(singleinstance, "_activation_handler", None)
+    li = singleinstance.SingleInstanceListener()
+    li._msg_id = 5
+    li._handle_message(5)                              # 不得抛
+```
+
+- [ ] **Step 2: 写失败测试（main 部分）**
 
 创建 `tests/test_main.py`：
 
@@ -529,11 +572,13 @@ def test_main_second_instance_activates_and_exits(monkeypatch):
 def test_main_first_instance_proceeds(monkeypatch):
     # 首实例：持有守卫句柄并照常进入启动流程
     monkeypatch.setattr(main.singleinstance, "acquire", lambda: "guard-handle")
+    monkeypatch.setattr(main.singleinstance, "SingleInstanceListener", _FakeListener())
     roots = []
+    loops = []
 
     class _FakeRoot:
         def mainloop(self):
-            pass
+            loops.append(1)
 
     def _fake_tk():
         r = _FakeRoot()
@@ -545,17 +590,112 @@ def test_main_first_instance_proceeds(monkeypatch):
     monkeypatch.setattr(appmod, "NoteApp", lambda root: None)
     main.main()
     assert len(roots) == 1
+    assert loops == [1]
     assert main._GUARD == "guard-handle"
+
+
+def test_main_fail_open_pass_sentinel_proceeds(monkeypatch):
+    # acquire 返回 PASS（非 Windows/Win32 失败）：放行启动，不当作第二实例
+    monkeypatch.setattr(main.singleinstance, "acquire", lambda: main.singleinstance.PASS)
+    monkeypatch.setattr(main.singleinstance, "SingleInstanceListener", _FakeListener())
+    roots = []
+
+    class _FakeRoot:
+        def mainloop(self):
+            pass
+
+    monkeypatch.setattr(main.tk, "Tk", lambda: roots.append(1) or _FakeRoot())
+    import app as appmod
+    monkeypatch.setattr(appmod, "NoteApp", lambda root: None)
+    main.main()
+    assert len(roots) == 1
+    assert main._GUARD is main.singleinstance.PASS
+
+
+def test_main_first_instance_starts_listener_before_tk_and_stops_after(monkeypatch):
+    # 首实例：监听线程在 acquire 后、Tk 创建前启动；mainloop 返回后停止
+    monkeypatch.setattr(main.singleinstance, "acquire", lambda: "guard")
+    events = []
+
+    class _FakeListener:
+        def start(self):
+            events.append("listener-start")
+
+        def stop(self):
+            events.append("listener-stop")
+
+    monkeypatch.setattr(main.singleinstance, "SingleInstanceListener",
+                        lambda: _FakeListener())
+
+    class _FakeRoot:
+        def mainloop(self):
+            events.append("mainloop")
+
+    monkeypatch.setattr(main.tk, "Tk", lambda: _FakeRoot())
+    import app as appmod
+    monkeypatch.setattr(appmod, "NoteApp", lambda root: events.append("noteapp"))
+    main.main()
+    assert events == ["listener-start", "noteapp", "mainloop", "listener-stop"]
 ```
 
-- [ ] **Step 2: 运行确认失败**
+注：`_FakeListener` 类定义放文件顶部（`import main` 之后），供前三个用例复用的写法：
 
-Run: `uv run pytest tests/test_main.py -v`
-Expected: FAIL — `AttributeError: module 'main' has no attribute 'singleinstance'`
+```python
+class _FakeListener:
+    def __init__(self, on_activate=None):
+        self.on_activate = on_activate
+        self.started = False
+        self.stopped = False
 
-- [ ] **Step 3: 实现**
+    def start(self):
+        self.started = True
 
-`main.py` 改为（仅在原文件头部插入守卫，其余不动）：
+    def stop(self):
+        self.stopped = True
+```
+
+（`test_main_first_instance_proceeds` 等三个用例里 `monkeypatch.setattr(main.singleinstance, "SingleInstanceListener", _FakeListener)` 传类本身；第四个用例里传返回记录事件的 lambda——按上面两个代码块实际形态灵活合并，保持每个用例断言行为即可。）
+
+- [ ] **Step 3: 运行确认失败**
+
+Run: `uv run pytest tests/test_singleinstance.py tests/test_main.py -v`
+Expected: FAIL — `AttributeError: module 'singleinstance' has no attribute 'set_activation_handler'`；`AttributeError: module 'main' has no attribute 'singleinstance'`
+
+- [ ] **Step 4: 实现（singleinstance.py）**
+
+`singleinstance.py` 在模块 docstring 之后、`MUTEX_NAME` 之前插入模块级回调与注册函数：
+
+```python
+_activation_handler = None  # 模块级窗口激活回调：NoteApp 就绪后经 set_activation_handler 注册
+
+
+def set_activation_handler(fn):
+    """注册窗口激活回调（传 None 可重置）；由 NoteApp 就绪时调用。
+
+    监听线程触发时经 _dispatch_activation 分派到此回调（仅入队，不碰 Tk）。
+    """
+    global _activation_handler
+    _activation_handler = fn
+
+
+def _dispatch_activation():
+    # 监听线程收到广播时的默认分派：handler 未注册（启动窗口内）为 no-op
+    if _activation_handler is not None:
+        _activation_handler()
+```
+
+`SingleInstanceListener.__init__` 的 `on_activate` 改为可选（默认分派到模块级回调）：
+
+```python
+    def __init__(self, on_activate=None, msg_name=ACTIVATE_MSG_NAME):
+        super().__init__()
+        self._on_activate = on_activate or _dispatch_activation
+        ...
+```
+
+- [ ] **Step 5: 实现（main.py）**
+
+`main.py` 改为（原守卫基础上增加监听线程提前启动/收尾）：
 
 ```python
 """Simple Note 入口。"""
@@ -566,7 +706,25 @@ from tkinter import messagebox
 
 import singleinstance
 
-_GUARD = None  # 单实例互斥体句柄：须持有至进程退出（OS 退出时自动释放）
+_GUARD = None    # 单实例互斥体句柄：须持有至进程退出（OS 退出时自动释放）
+_LISTENER = None  # 单实例监听线程（早于 Tk 创建，消除启动竞态）
+
+
+def _start_single_instance_listener():
+    """acquire 成功后立即启动监听线程（早于任何 Tk 创建）。
+
+    不传 on_activate：默认分派到 set_activation_handler 注册的模块级回调，
+    由 NoteApp 就绪时接线。
+    """
+    global _LISTENER
+    _LISTENER = singleinstance.SingleInstanceListener()
+    _LISTENER.start()
+
+
+def stop_single_instance_listener():
+    """mainloop 退出后停掉监听线程（进程即将结束，清理窗口类/消息泵）。"""
+    if _LISTENER is not None:
+        _LISTENER.stop()
 
 
 def main():
@@ -576,6 +734,7 @@ def main():
         # 已有实例在运行：尽力激活其窗口，本进程静默退出（不创建任何 Tk 对象）
         singleinstance.activate_existing()
         return
+    _start_single_instance_listener()
 
     try:
         from PIL import Image  # noqa: F401
@@ -592,39 +751,42 @@ def main():
     from app import NoteApp
     NoteApp(root)
     root.mainloop()
+    stop_single_instance_listener()
 
 
 if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 4: 运行确认通过**
+- [ ] **Step 6: 运行确认通过**
 
-Run: `uv run pytest tests/test_main.py -v`
-Expected: PASS
+Run: `uv run pytest tests/test_singleinstance.py tests/test_main.py -v`
+Expected: PASS（全部既有用例不回归）
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 7: 提交**
 
 ```bash
-git add main.py tests/test_main.py
-git commit -m "feat(main): 启动入口单实例守卫，第二实例激活已有窗口后退出"
+git add singleinstance.py main.py tests/test_singleinstance.py tests/test_main.py
+git commit -m "feat(main): 监听线程提前到 main.py 消除启动竞态，激活经模块级回调接线"
 ```
 
 ---
 
-### Task 6: `app.NoteApp` 接线（监听线程 → tray.show）
+### Task 6: `app.NoteApp` 注册激活回调（tray 队列封送）
 
 **Files:**
-- Modify: `app.py:16`（imports）、`app.py:86`（`tray.start()` 后）、`app.py:416`（`_real_quit`）
+- Modify: `app.py`（imports、`__init__` 中 `tray.start()` 后）
 - Test: `tests/test_app.py`
+
+说明：监听线程已在 main.py 启动（Task 5）。NoteApp 只负责**注册激活回调**；`_real_quit` 不再涉及监听线程（停止已移至 main.py 的 mainloop 退出路径）。
 
 - [ ] **Step 1: 写失败测试**
 
 向 `tests/test_app.py` 追加（文件已有 `from types import SimpleNamespace`、`import pytest`）：
 
 ```python
-def test_real_quit_stops_single_instance_listener():
-    # 退出时必须停掉单实例监听线程（顺序：tray -> listener -> root）
+def test_real_quit_without_listener_cleanup(monkeypatch):
+    # 监听线程停止已移至 main.py（mainloop 退出路径）；_real_quit 只管 tray -> root
     from app import NoteApp
     app = NoteApp.__new__(NoteApp)
     stopped = []
@@ -632,28 +794,15 @@ def test_real_quit_stops_single_instance_listener():
     app._reminder_dlg = None
     app._persist = lambda: None
     app.tray = SimpleNamespace(stop=lambda: stopped.append("tray"))
-    app._si_listener = SimpleNamespace(stop=lambda: stopped.append("listener"))
     app.root = SimpleNamespace(destroy=lambda: stopped.append("root"))
     app._real_quit()
-    assert stopped == ["tray", "listener", "root"]
+    assert stopped == ["tray", "root"]
 
 
-def test_noteapp_wires_single_instance_listener(tk_root, monkeypatch):
-    # 完整 NoteApp 接线：监听线程被创建并 start；激活回调经 tray.enqueue
-    # 封送、主线程消费后调 tray.show；_real_quit 停掉监听线程
+def test_noteapp_registers_activation_handler(tk_root, monkeypatch):
+    # NoteApp 就绪后注册激活回调：触发时经 tray.enqueue 封送，主线程消费后调 tray.show
+    import singleinstance
     import app as appmod
-
-    class _FakeListener:
-        def __init__(self, on_activate):
-            self.on_activate = on_activate
-            self.started = False
-            self.stopped = False
-
-        def start(self):
-            self.started = True
-
-        def stop(self):
-            self.stopped = True
 
     class _FakeTray:
         def __init__(self, root, on_quit, on_hide):
@@ -678,53 +827,44 @@ def test_noteapp_wires_single_instance_listener(tk_root, monkeypatch):
         def is_running(self):
             return True
 
-    monkeypatch.setattr(appmod, "SingleInstanceListener", _FakeListener)
     monkeypatch.setattr(appmod, "TrayController", _FakeTray)
     monkeypatch.setattr(appmod.settings, "save_settings", lambda *a, **k: None)
+    monkeypatch.setattr(singleinstance, "_activation_handler", None)  # 防污染
     app = appmod.NoteApp(tk_root)
     try:
-        listener = app._si_listener
-        assert isinstance(listener, _FakeListener) and listener.started
-        listener.on_activate()                       # 模拟监听线程收到广播（只入队）
+        assert singleinstance._activation_handler is not None
+        singleinstance._activation_handler()          # 模拟监听线程默认分派（只入队）
         assert len(app.tray.enqueued) == 1
         assert app.tray.shown == 0
-        app.tray.enqueued[0]()                       # 模拟主线程 _drain 消费
+        app.tray.enqueued[0]()                        # 模拟主线程 _drain 消费
         assert app.tray.shown == 1
     finally:
-        app._real_quit()                             # 清理：停 tray/listener、销毁 root
-    assert listener.stopped
+        app._real_quit()                              # 清理：停 tray、销毁 root
+        singleinstance.set_activation_handler(None)   # 清理模块级回调
 ```
 
 - [ ] **Step 2: 运行确认失败**
 
-Run: `uv run pytest tests/test_app.py -v -k "single_instance"`
-Expected: FAIL — `AttributeError: 'NoteApp' object has no attribute '_si_listener'`（第一个用例）；`AttributeError: module 'app' has no attribute 'SingleInstanceListener'`（第二个）
+Run: `uv run pytest tests/test_app.py -v -k "activation_handler or real_quit_without_listener"`
+Expected: FAIL — `AttributeError: module 'app' has no attribute 'SingleInstanceListener'`（若 import 尚存）或断言失败（handler 未注册）
 
 - [ ] **Step 3: 实现**
 
-`app.py` 三处修改：
+`app.py` 两处修改：
 
 imports（line 16，`from tray import TrayController` 后）：
 
 ```python
-from singleinstance import SingleInstanceListener
+import singleinstance
 ```
 
 `__init__` 中 `self.tray.start()`（line 86）之后插入：
 
 ```python
-        self._si_listener = SingleInstanceListener(
-            on_activate=lambda: self.tray.enqueue(self.tray.show))
-        self._si_listener.start()
+        singleinstance.set_activation_handler(lambda: self.tray.enqueue(self.tray.show))
 ```
 
-`_real_quit`（line 407-417）中 `self.tray.stop()` 后插入一行：
-
-```python
-        self.tray.stop()
-        self._si_listener.stop()
-        self.root.destroy()
-```
+`_real_quit` **不改动**（无监听线程可停；`tray.stop()` + `root.destroy()` 原样）。
 
 - [ ] **Step 4: 运行确认通过**
 
@@ -735,7 +875,7 @@ Expected: PASS（全部既有 app 用例不回归；`tk_root` 用例在无显示
 
 ```bash
 git add app.py tests/test_app.py
-git commit -m "feat(app): 接线单实例监听线程，激活广播经 tray 队列恢复窗口"
+git commit -m "feat(app): NoteApp 注册激活回调，经 tray 队列恢复窗口"
 ```
 
 ---
@@ -750,7 +890,7 @@ git commit -m "feat(app): 接线单实例监听线程，激活广播经 tray 队
 在 Architecture 的 `tray.py` 条目后追加一条：
 
 ```markdown
-- `singleinstance.py` — 单实例守卫（仅 Windows，fail-open）：`acquire()` 占用命名互斥体（已占用返回 None = 第二实例）；`activate_existing()` 广播 `SimpleNote.Activate` 注册消息；`SingleInstanceListener` 是隐藏**顶层**窗口（message-only 窗口收不到广播）+ GetMessageW 泵的守护线程。`main.py` 在任何 Tk 创建之前分流第二实例（广播后静默退出）；第一实例监听线程收到广播经 `tray.enqueue(tray.show)` 恢复并置前窗口。监听线程绝不碰 Tk、只入队（同 tray 热键规则）。测试用带 pid 的唯一互斥体/消息名，避免与开发机上运行中的真实实例互扰。
+- `singleinstance.py` — 单实例守卫（仅 Windows，fail-open）：`acquire()` 占用命名互斥体（已占用返回 None = 第二实例）；`activate_existing()` 广播 `SimpleNote.Activate` 注册消息；`SingleInstanceListener` 是隐藏**顶层**窗口（message-only 窗口收不到广播）+ GetMessageW 泵的守护线程，`on_activate` 可省略（默认分派到 `set_activation_handler` 注册的模块级回调）。`main.py` 在**任何 Tk 创建之前**分流第二实例（广播后静默退出），且 acquire 成功后**立即启动监听线程**（消除启动竞态）；`NoteApp.__init__` 用 `singleinstance.set_activation_handler(lambda: self.tray.enqueue(self.tray.show))` 接线，激活广播经 tray 队列封送恢复并置前窗口；`mainloop()` 返回后 `stop_single_instance_listener()`。监听线程绝不碰 Tk、只入队（同 tray 热键规则）。测试用带 pid 的唯一互斥体/消息名，避免与开发机上运行中的真实实例互扰。
 ```
 
 - [ ] **Step 2: 全量测试**
