@@ -88,8 +88,8 @@ def activate_existing(timeout_ms=2000, msg_name=ACTIVATE_MSG_NAME):
         if not msg:
             return False
         result = ctypes.c_size_t(0)
-        user32.SendMessageTimeoutW(
+        sent = user32.SendMessageTimeoutW(
             _HWND_BROADCAST, msg, 0, 0, _SMTO_NORMAL, timeout_ms, ctypes.byref(result))
-        return True
+        return bool(sent)
     except Exception:
         return False

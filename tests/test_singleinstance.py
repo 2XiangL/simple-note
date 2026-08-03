@@ -57,6 +57,43 @@ def test_activate_existing_false_on_non_windows(monkeypatch):
     assert singleinstance.activate_existing() is False
 
 
+def test_activate_existing_fail_open_on_win32_error(monkeypatch):
+    # Win32 调用异常 -> 静默返回 False（fail-open，绝不阻断启动）
+    import ctypes as real_ctypes
+
+    class _FailingRegisterWindowMessageW:
+        # 伪 ctypes 函数对象：可挂 argtypes/restype，调用即抛以模拟 Win32 失败
+        def __call__(self, *args, **kwargs):
+            raise OSError("模拟 Win32 调用失败")
+
+    class _FakeUser32:
+        def __init__(self):
+            self.RegisterWindowMessageW = _FailingRegisterWindowMessageW()
+            self.SendMessageTimeoutW = object()   # 仅需可挂 argtypes/restype
+
+    monkeypatch.setattr(singleinstance.sys, "platform", "win32")
+    monkeypatch.setattr(real_ctypes, "WinDLL", lambda *a, **k: _FakeUser32())
+    assert singleinstance.activate_existing() is False
+
+
+def test_activate_existing_fail_open_when_msg_zero(monkeypatch):
+    # RegisterWindowMessageW 返回 0（注册失败）-> 静默返回 False
+    import ctypes as real_ctypes
+
+    class _ZeroRegisterWindowMessageW:
+        def __call__(self, *args, **kwargs):
+            return 0
+
+    class _FakeUser32:
+        def __init__(self):
+            self.RegisterWindowMessageW = _ZeroRegisterWindowMessageW()
+            self.SendMessageTimeoutW = object()   # 仅需可挂 argtypes/restype
+
+    monkeypatch.setattr(singleinstance.sys, "platform", "win32")
+    monkeypatch.setattr(real_ctypes, "WinDLL", lambda *a, **k: _FakeUser32())
+    assert singleinstance.activate_existing() is False
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Win32 广播仅 Windows")
 def test_activate_existing_smoke():
     # 无监听者时广播也"成功"（尽力而为语义）；真实收发闭环见 test_broadcast_reaches_listener
