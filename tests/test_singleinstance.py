@@ -122,6 +122,41 @@ def test_handle_message_swallows_callback_error():
     li._handle_message(7)          # 不得向外抛
 
 
+def test_listener_fail_open_when_register_msg_zero(monkeypatch, capsys):
+    # RegisterWindowMessageW 返回 0（注册失败）-> stderr 告警 + 线程就绪即退出，不空泵
+    import ctypes as real_ctypes
+
+    class _ZeroRegisterWindowMessageW:
+        def __call__(self, *args, **kwargs):
+            return 0
+
+    class _Stub:
+        pass  # 仅需可挂 argtypes/restype
+
+    class _FakeUser32:
+        def __init__(self):
+            self.RegisterWindowMessageW = _ZeroRegisterWindowMessageW()
+
+        def __getattr__(self, name):
+            return _Stub()
+
+    class _FakeKernel32:
+        def __getattr__(self, name):
+            return _Stub()
+
+    monkeypatch.setattr(
+        real_ctypes, "WinDLL",
+        lambda name, **k: _FakeUser32() if name == "user32" else _FakeKernel32())
+    calls = []
+    li = singleinstance.SingleInstanceListener(lambda: calls.append(1))
+    li.start()
+    assert li._ready.wait(timeout=5), "监听线程未在 5s 内就绪"
+    li.join(timeout=5)
+    assert not li.is_alive()
+    assert calls == []
+    assert "warning" in capsys.readouterr().err
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Win32 广播/监听仅 Windows")
 def test_broadcast_reaches_listener():
     # 闭环集成：真实监听线程 + 真实广播，不碰 Tk，无显示器可跑

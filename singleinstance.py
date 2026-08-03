@@ -7,7 +7,7 @@ fail-open（放行启动），绝不阻断应用启动。
 """
 
 import sys
-import threading  # noqa: F401  （Task 3 的 SingleInstanceListener 用）
+import threading
 
 MUTEX_NAME = "SimpleNote.SingleInstance"
 ACTIVATE_MSG_NAME = "SimpleNote.Activate"
@@ -17,6 +17,7 @@ _ERROR_ALREADY_EXISTS = 183
 _WM_QUIT = 0x0012
 _HWND_BROADCAST = 0xFFFF
 _SMTO_NORMAL = 0x0000
+_SMTO_ABORTIFHUNG = 0x0002
 
 PASS = "pass"  # 非 Windows / Win32 异常时的哨兵返回值：放行启动，无句柄需持有
 
@@ -88,8 +89,10 @@ def activate_existing(timeout_ms=2000, msg_name=ACTIVATE_MSG_NAME):
         if not msg:
             return False
         result = ctypes.c_size_t(0)
+        # 加上 ABORTIFHUNG：桌面存在挂起窗口时广播不无限阻塞，超时即放弃
         sent = user32.SendMessageTimeoutW(
-            _HWND_BROADCAST, msg, 0, 0, _SMTO_NORMAL, timeout_ms, ctypes.byref(result))
+            _HWND_BROADCAST, msg, 0, 0, _SMTO_NORMAL | _SMTO_ABORTIFHUNG,
+            timeout_ms, ctypes.byref(result))
         return bool(sent)
     except Exception:
         return False
@@ -159,6 +162,11 @@ class SingleInstanceListener(threading.Thread):
         user32.UnregisterClassW.restype = wintypes.BOOL
 
         self._msg_id = user32.RegisterWindowMessageW(self._msg_name)
+        if not self._msg_id:
+            print("warning: 单实例激活消息注册失败（GetLastError=%d）"
+                  % ctypes.get_last_error(), file=sys.stderr)
+            self._ready.set()
+            return
 
         class WNDCLASSEXW(ctypes.Structure):
             _fields_ = [
