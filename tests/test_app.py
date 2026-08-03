@@ -385,3 +385,61 @@ def test_open_workspace_failure_list_truncated(tmp_path, monkeypatch):
     assert shown
     assert "失败 12 个" in str(shown[0])
     assert "…等 12 个" in str(shown[0])
+
+
+def test_real_quit_without_listener_cleanup():
+    # 监听线程停止已移至 main.py（mainloop 退出路径）；_real_quit 只管 tray -> root
+    from app import NoteApp
+    app = NoteApp.__new__(NoteApp)
+    stopped = []
+    app.docs = []
+    app._reminder_dlg = None
+    app._persist = lambda: None
+    app.tray = SimpleNamespace(stop=lambda: stopped.append("tray"))
+    app.root = SimpleNamespace(destroy=lambda: stopped.append("root"))
+    app._real_quit()
+    assert stopped == ["tray", "root"]
+
+
+def test_noteapp_registers_activation_handler(tk_root, monkeypatch):
+    # NoteApp 就绪后注册激活回调：触发时经 tray.enqueue 封送，主线程消费后调 tray.show
+    import singleinstance
+    import app as appmod
+
+    class _FakeTray:
+        def __init__(self, root, on_quit, on_hide):
+            self.enqueued = []
+            self.shown = 0
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def enqueue(self, fn):
+            self.enqueued.append(fn)
+
+        def show(self):
+            self.shown += 1
+
+        def hide(self):
+            pass
+
+        def is_running(self):
+            return True
+
+    monkeypatch.setattr(appmod, "TrayController", _FakeTray)
+    monkeypatch.setattr(appmod.settings, "save_settings", lambda *a, **k: None)
+    monkeypatch.setattr(singleinstance, "_activation_handler", None)  # 防污染
+    app = appmod.NoteApp(tk_root)
+    try:
+        assert singleinstance._activation_handler is not None
+        singleinstance._activation_handler()          # 模拟监听线程默认分派（只入队）
+        assert len(app.tray.enqueued) == 1
+        assert app.tray.shown == 0
+        app.tray.enqueued[0]()                        # 模拟主线程 _drain 消费
+        assert app.tray.shown == 1
+    finally:
+        app._real_quit()                              # 清理：停 tray、销毁 root
+        singleinstance.set_activation_handler(None)   # 清理模块级回调

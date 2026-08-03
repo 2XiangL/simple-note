@@ -14,6 +14,7 @@ from editor import RichTextEditor
 from reminder import ReminderScheduler
 from reminder_dialog import ReminderDialog
 from tray import TrayController
+import singleinstance
 from notes_panel import NotesPanel
 from toolbar import FormatToolbar
 from search_dialog import SearchDialog
@@ -84,6 +85,8 @@ class NoteApp:
             on_hide=lambda: self.active is not None and self.active.editor.end_resize(),
         )
         self.tray.start()
+        # 注册激活回调：监听线程触发只入队（enqueue），主线程 _drain 消费后 show()
+        singleinstance.set_activation_handler(lambda: self.tray.enqueue(self.tray.show))
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._tick()
