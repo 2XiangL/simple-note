@@ -27,15 +27,8 @@ def stop_single_instance_listener():
         _LISTENER.stop()
 
 
-def main():
-    global _GUARD
-    _GUARD = singleinstance.acquire()
-    if _GUARD is None:
-        # 已有实例在运行：尽力激活其窗口，本进程静默退出（不创建任何 Tk 对象）
-        singleinstance.activate_existing()
-        return
-    _start_single_instance_listener()
-
+def _startup():
+    """首实例启动流程：Pillow 探测 + Tk + NoteApp。"""
     try:
         from PIL import Image  # noqa: F401
     except Exception:
@@ -51,7 +44,22 @@ def main():
     from app import NoteApp
     NoteApp(root)
     root.mainloop()
-    stop_single_instance_listener()
+
+
+def main():
+    global _GUARD
+    _GUARD = singleinstance.acquire()
+    if _GUARD is None:
+        # 已有实例在运行：尽力激活其窗口，本进程静默退出（不创建任何 Tk 对象）
+        singleinstance.activate_existing()
+        return
+    if _GUARD is not singleinstance.PASS:
+        # 真实持有互斥体才需要监听（PASS 为 fail-open：无守卫，多开不受限，不打扰）
+        _start_single_instance_listener()
+    try:
+        _startup()
+    finally:
+        stop_single_instance_listener()
 
 
 if __name__ == "__main__":

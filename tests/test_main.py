@@ -86,8 +86,8 @@ def test_main_first_instance_starts_listener_before_tk_and_stops_after(monkeypat
         def mainloop(self):
             events.append("mainloop")
 
-    monkeypatch.setattr(main.tk, "Tk", lambda: _FakeRoot())
+    monkeypatch.setattr(main.tk, "Tk", lambda: events.append("tk") or _FakeRoot())
     import app as appmod
     monkeypatch.setattr(appmod, "NoteApp", lambda root: events.append("noteapp"))
     main.main()
-    assert events == ["listener-start", "noteapp", "mainloop", "listener-stop"]
+    assert events == ["listener-start", "tk", "noteapp", "mainloop", "listener-stop"]
