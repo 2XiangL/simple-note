@@ -50,3 +50,15 @@ def test_acquire_fail_open_on_win32_error(monkeypatch, capsys):
 
 def test_release_none_is_noop():
     singleinstance.release(None)                     # 不得抛
+
+
+def test_activate_existing_false_on_non_windows(monkeypatch):
+    monkeypatch.setattr(singleinstance.sys, "platform", "linux")
+    assert singleinstance.activate_existing() is False
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Win32 广播仅 Windows")
+def test_activate_existing_smoke():
+    # 无监听者时广播也"成功"（尽力而为语义）；真实收发闭环见 test_broadcast_reaches_listener
+    name = _unique_name("SimpleNote.Test.Activate.Smoke")
+    assert singleinstance.activate_existing(timeout_ms=500, msg_name=name) is True

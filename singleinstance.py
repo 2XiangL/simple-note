@@ -65,3 +65,31 @@ def release(handle):
         kernel32.CloseHandle(handle)
     except Exception:
         pass
+
+
+def activate_existing(timeout_ms=2000, msg_name=ACTIVATE_MSG_NAME):
+    """向第一实例广播激活消息；尽力而为，任何失败静默返回 False。"""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.RegisterWindowMessageW.argtypes = [wintypes.LPCWSTR]
+        user32.RegisterWindowMessageW.restype = wintypes.UINT
+        # 结果参数为 DWORD_PTR（指针宽度）：64 位上必须用 c_size_t，DWORD 会写越界
+        user32.SendMessageTimeoutW.argtypes = [
+            wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+            wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_size_t),
+        ]
+        user32.SendMessageTimeoutW.restype = wintypes.LPARAM
+        msg = user32.RegisterWindowMessageW(msg_name)
+        if not msg:
+            return False
+        result = ctypes.c_size_t(0)
+        user32.SendMessageTimeoutW(
+            _HWND_BROADCAST, msg, 0, 0, _SMTO_NORMAL, timeout_ms, ctypes.byref(result))
+        return True
+    except Exception:
+        return False
