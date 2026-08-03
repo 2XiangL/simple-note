@@ -29,5 +29,24 @@ def test_acquire_pass_on_non_windows(monkeypatch):
     singleinstance.release(singleinstance.PASS)      # no-op，不得抛
 
 
+def test_acquire_fail_open_on_win32_error(monkeypatch, capsys):
+    # Win32 调用异常 -> stderr 警告 + PASS 放行（绝不阻断启动）
+    import ctypes as real_ctypes
+
+    class _FailingCreateMutexW:
+        # 伪 ctypes 函数对象：可挂 argtypes/restype，调用即抛以模拟 Win32 失败
+        def __call__(self, *args, **kwargs):
+            raise OSError("模拟 Win32 调用失败")
+
+    class _FakeKernel32:
+        def __init__(self):
+            self.CreateMutexW = _FailingCreateMutexW()
+
+    monkeypatch.setattr(singleinstance.sys, "platform", "win32")
+    monkeypatch.setattr(real_ctypes, "WinDLL", lambda *a, **k: _FakeKernel32())
+    assert singleinstance.acquire() is singleinstance.PASS
+    assert "warning" in capsys.readouterr().err
+
+
 def test_release_none_is_noop():
     singleinstance.release(None)                     # 不得抛

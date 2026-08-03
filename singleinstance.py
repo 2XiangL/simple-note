@@ -36,6 +36,7 @@ def acquire(name=MUTEX_NAME):
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
         kernel32.CreateMutexW.restype = wintypes.HANDLE
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
         h = kernel32.CreateMutexW(None, False, name)
         err = ctypes.get_last_error()
         if err == _ERROR_ALREADY_EXISTS:
@@ -57,6 +58,10 @@ def release(handle):
         return
     try:
         import ctypes
-        ctypes.WinDLL("kernel32").CloseHandle(handle)
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle(handle)
     except Exception:
         pass
