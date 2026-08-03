@@ -191,6 +191,10 @@ class TrayController:
             self._icon = None
 
     # ---- 跨线程封送：外部线程只入队，主线程 _poll/_drain 消费 ----
+    def enqueue(self, fn):
+        """供外部线程入队的公开入口（内部 _marshal 的别名）。"""
+        self._calls.put(fn)
+
     def _marshal(self, fn):
         self._calls.put(fn)
 

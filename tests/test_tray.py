@@ -51,6 +51,17 @@ def test_tray_state_machine():
     assert tc._hidden is True
 
 
+def test_tray_enqueue_runs_on_drain():
+    # enqueue 是外部线程的公开入队口：只入队不执行，主线程 _drain 才消费
+    root = _FakeRoot()
+    tc = tray.TrayController(root, on_quit=lambda: None, on_hide=lambda: None)
+    calls = []
+    tc.enqueue(lambda: calls.append(1))
+    assert calls == []
+    tc._drain()
+    assert calls == [1]
+
+
 def test_tray_on_hotkey_marshals_via_queue():
     root = _FakeRoot()
     tc = tray.TrayController(root, on_quit=lambda: None, on_hide=lambda: None)
