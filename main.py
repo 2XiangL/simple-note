@@ -4,8 +4,19 @@ import sys
 import tkinter as tk
 from tkinter import messagebox
 
+import singleinstance
+
+_GUARD = None  # 单实例互斥体句柄：须持有至进程退出（OS 退出时自动释放）
+
 
 def main():
+    global _GUARD
+    _GUARD = singleinstance.acquire()
+    if _GUARD is None:
+        # 已有实例在运行：尽力激活其窗口，本进程静默退出（不创建任何 Tk 对象）
+        singleinstance.activate_existing()
+        return
+
     try:
         from PIL import Image  # noqa: F401
     except Exception:
