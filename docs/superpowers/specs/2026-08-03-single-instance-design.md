@@ -35,8 +35,8 @@ Tk-free、Windows 优先，风格对齐 `tray.py`/`imefont.py`：非 Windows 或
 |---|---|
 | `acquire(name=MUTEX_NAME)` | `CreateMutexW(None, FALSE, name)`。首实例返回互斥体句柄（须持有至进程退出）；`GetLastError() == ERROR_ALREADY_EXISTS` 返回 `None`；非 Windows 或 API 异常 → stderr 警告并返回哨兵值放行（fail-open：宁可偶尔多开，不可启动失败） |
 | `release(handle)` | `CloseHandle`（退出与测试用；哨兵值为 no-op） |
-| `activate_existing(timeout_ms=2000)` | `RegisterWindowMessageW("SimpleNote.Activate")` 后 `SendMessageTimeoutW(HWND_BROADCAST, msg, 0, 0, SMTO_NORMAL, timeout_ms)`；尽力而为返回 bool，任何失败静默返回 False |
-| `SingleInstanceListener(threading.Thread)` | 守护线程：隐藏**顶层**窗口 + GetMessageW 消息泵；收到注册消息调用 `on_activate()`（仍在监听线程内） |
+| `activate_existing(timeout_ms=2000, msg_name=ACTIVATE_MSG_NAME)` | `RegisterWindowMessageW(msg_name)` 后 `SendMessageTimeoutW(HWND_BROADCAST, msg, 0, 0, SMTO_NORMAL, timeout_ms)`；尽力而为返回 bool，任何失败静默返回 False。`msg_name` 为测试缝隙（默认值不变），测试用唯一名避免惊动开发机上运行中的真实实例 |
+| `SingleInstanceListener(threading.Thread)` | 守护线程：隐藏**顶层**窗口 + GetMessageW 消息泵；收到注册消息调用 `on_activate()`（仍在监听线程内）。构造参数 `on_activate`，可选 `msg_name=ACTIVATE_MSG_NAME`（同上测试缝隙） |
 
 关键点：监听窗口必须是普通隐藏顶层窗口——message-only 窗口（HWND_MESSAGE）收不到 `HWND_BROADCAST` 广播。
 
@@ -102,7 +102,7 @@ self._si_listener.start()
 
 ## 测试
 
-全部无显示器可跑（不碰真实 Tk），风格对齐 `tests/test_tray.py`：
+全部无显示器可跑（不碰真实 Tk），风格对齐 `tests/test_tray.py`。互斥体/消息名在测试中带 `os.getpid()` 唯一化，避免与开发机上运行中的真实实例互扰（真实实例持有同名互斥体、监听同名广播）：
 
 | 测试 | 手段 |
 |---|---|
