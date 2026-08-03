@@ -56,6 +56,7 @@ def acquire(name=MUTEX_NAME):
         kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
         kernel32.CreateMutexW.restype = wintypes.HANDLE
         kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        ctypes.set_last_error(0)   # 清除陈旧 last-error：成功调用不会写 GetLastError，防误判 ALREADY_EXISTS
         h = kernel32.CreateMutexW(None, False, name)
         err = ctypes.get_last_error()
         if err == _ERROR_ALREADY_EXISTS:
