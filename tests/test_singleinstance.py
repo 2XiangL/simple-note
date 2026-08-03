@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 import pytest
 
@@ -99,3 +100,41 @@ def test_activate_existing_smoke():
     # 无监听者时广播也"成功"（尽力而为语义）；真实收发闭环见 test_broadcast_reaches_listener
     name = _unique_name("SimpleNote.Test.Activate.Smoke")
     assert singleinstance.activate_existing(timeout_ms=500, msg_name=name) is True
+
+
+def test_handle_message_only_fires_on_registered_id():
+    calls = []
+    li = singleinstance.SingleInstanceListener(on_activate=lambda: calls.append(1))
+    li._msg_id = 12345
+    li._handle_message(12345)
+    assert calls == [1]
+    li._handle_message(999)
+    li._handle_message(0)
+    assert calls == [1]
+
+
+def test_handle_message_swallows_callback_error():
+    def boom():
+        raise RuntimeError("x")
+
+    li = singleinstance.SingleInstanceListener(on_activate=boom)
+    li._msg_id = 7
+    li._handle_message(7)          # 不得向外抛
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Win32 广播/监听仅 Windows")
+def test_broadcast_reaches_listener():
+    # 闭环集成：真实监听线程 + 真实广播，不碰 Tk，无显示器可跑
+    calls = []
+    name = _unique_name("SimpleNote.Test.Activate")
+    li = singleinstance.SingleInstanceListener(lambda: calls.append(1), msg_name=name)
+    li.start()
+    try:
+        assert li._ready.wait(timeout=5), "监听线程未在 5s 内就绪"
+        assert singleinstance.activate_existing(msg_name=name) is True
+        deadline = time.time() + 5
+        while not calls and time.time() < deadline:
+            time.sleep(0.05)
+        assert calls == [1]
+    finally:
+        li.stop()

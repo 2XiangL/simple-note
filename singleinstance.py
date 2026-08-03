@@ -93,3 +93,142 @@ def activate_existing(timeout_ms=2000, msg_name=ACTIVATE_MSG_NAME):
         return bool(sent)
     except Exception:
         return False
+
+
+class SingleInstanceListener(threading.Thread):
+    """隐藏顶层窗口 + GetMessageW 泵：收到激活广播调用 on_activate。
+
+    必须是顶层窗口（而非 HWND_MESSAGE）：message-only 窗口收不到
+    HWND_BROADCAST 广播。on_activate 在本监听线程内执行——调用方须自行
+    封送（enqueue）回主线程，绝不直接碰 Tk。
+    """
+
+    daemon = True
+
+    def __init__(self, on_activate, msg_name=ACTIVATE_MSG_NAME):
+        super().__init__()
+        self._on_activate = on_activate
+        self._msg_name = msg_name
+        self._msg_id = 0
+        self._thread_id = 0
+        self._ready = threading.Event()
+        self._wndproc_ref = None  # 保持 wndproc 回调引用防 GC
+
+    def _handle_message(self, msg_id):
+        """纯分派逻辑（可脱离 Win32 单测）：仅注册消息 id 触发回调。"""
+        if msg_id and msg_id == self._msg_id:
+            try:
+                self._on_activate()
+            except Exception as exc:
+                print("warning: 单实例激活回调出错：%s" % exc, file=sys.stderr)
+
+    def run(self):
+        import ctypes
+        from ctypes import wintypes
+
+        try:
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        except (AttributeError, OSError) as exc:
+            print("warning: 单实例监听不可用：%s" % exc, file=sys.stderr)
+            self._ready.set()
+            return
+
+        WNDPROC = ctypes.WINFUNCTYPE(
+            wintypes.LPARAM, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+
+        def wndproc(hwnd, msg, wparam, lparam):
+            self._handle_message(msg)
+            return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+        self._wndproc_ref = WNDPROC(wndproc)
+
+        user32.RegisterWindowMessageW.argtypes = [wintypes.LPCWSTR]
+        user32.RegisterWindowMessageW.restype = wintypes.UINT
+        user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND,
+                                       wintypes.UINT, wintypes.UINT]
+        user32.GetMessageW.restype = ctypes.c_int
+        user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                          wintypes.WPARAM, wintypes.LPARAM]
+        user32.DefWindowProcW.restype = wintypes.LPARAM
+        kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+        kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+        user32.DestroyWindow.argtypes = [wintypes.HWND]
+        user32.DestroyWindow.restype = wintypes.BOOL
+        user32.UnregisterClassW.argtypes = [wintypes.LPCWSTR, wintypes.HMODULE]
+        user32.UnregisterClassW.restype = wintypes.BOOL
+
+        self._msg_id = user32.RegisterWindowMessageW(self._msg_name)
+
+        class WNDCLASSEXW(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.UINT),
+                ("style", wintypes.UINT),
+                ("lpfnWndProc", WNDPROC),
+                ("cbClsExtra", ctypes.c_int),
+                ("cbWndExtra", ctypes.c_int),
+                ("hInstance", wintypes.HANDLE),
+                ("hIcon", wintypes.HANDLE),
+                ("hCursor", wintypes.HANDLE),
+                ("hbrBackground", wintypes.HANDLE),
+                ("lpszMenuName", wintypes.LPCWSTR),
+                ("lpszClassName", wintypes.LPCWSTR),
+                ("hIconSm", wintypes.HANDLE),
+            ]
+
+        wc = WNDCLASSEXW()
+        wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
+        wc.lpfnWndProc = self._wndproc_ref
+        wc.hInstance = kernel32.GetModuleHandleW(None)
+        wc.lpszClassName = WINDOW_CLASS
+
+        user32.RegisterClassExW.argtypes = [ctypes.POINTER(WNDCLASSEXW)]
+        user32.RegisterClassExW.restype = wintypes.ATOM
+        if not user32.RegisterClassExW(ctypes.byref(wc)):
+            print("warning: 单实例窗口类注册失败（GetLastError=%d）"
+                  % ctypes.get_last_error(), file=sys.stderr)
+            self._ready.set()
+            return
+
+        user32.CreateWindowExW.argtypes = [
+            wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            wintypes.HWND, wintypes.HANDLE, wintypes.HANDLE, wintypes.LPVOID,
+        ]
+        user32.CreateWindowExW.restype = wintypes.HWND
+        hwnd = user32.CreateWindowExW(0, WINDOW_CLASS, WINDOW_CLASS, 0, 0, 0, 0, 0,
+                                      None, None, wc.hInstance, None)
+        if not hwnd:
+            user32.UnregisterClassW(WINDOW_CLASS, wc.hInstance)
+            print("warning: 单实例监听窗口创建失败（GetLastError=%d）"
+                  % ctypes.get_last_error(), file=sys.stderr)
+            self._ready.set()
+            return
+
+        self._thread_id = kernel32.GetCurrentThreadId()
+        self._ready.set()
+
+        msg = wintypes.MSG()
+        try:
+            while True:
+                # GetMessageW：0 = WM_QUIT，-1 = 出错，均退出泵
+                if user32.GetMessageW(ctypes.byref(msg), None, 0, 0) <= 0:
+                    break
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+        finally:
+            user32.DestroyWindow(hwnd)
+            user32.UnregisterClassW(WINDOW_CLASS, wc.hInstance)
+
+    def stop(self):
+        """唤醒泵线程退出（PostThreadMessage WM_QUIT 打断 GetMessage）。"""
+        if not self._ready.wait(timeout=2):
+            return
+        if not self._thread_id:
+            return
+        try:
+            import ctypes
+            ctypes.windll.user32.PostThreadMessageW(self._thread_id, _WM_QUIT, 0, 0)
+        except Exception:
+            pass
+        self.join(timeout=2)
