@@ -173,3 +173,37 @@ def test_broadcast_reaches_listener():
         assert calls == [1]
     finally:
         li.stop()
+
+
+def test_activation_handler_dispatch(monkeypatch):
+    # 监听器省略 on_activate 时：默认分派到 set_activation_handler 注册的模块级回调
+    calls = []
+    monkeypatch.setattr(singleinstance, "_activation_handler", None)
+    singleinstance.set_activation_handler(lambda: calls.append(1))
+    li = singleinstance.SingleInstanceListener()      # 不传 on_activate
+    li._msg_id = 42
+    li._handle_message(42)
+    assert calls == [1]
+    singleinstance.set_activation_handler(None)       # 清理，防测试间污染
+
+
+def test_explicit_on_activate_beats_global_handler(monkeypatch):
+    # 显式传入 on_activate 优先于模块级回调
+    global_calls = []
+    local_calls = []
+    monkeypatch.setattr(singleinstance, "_activation_handler", None)
+    singleinstance.set_activation_handler(lambda: global_calls.append(1))
+    li = singleinstance.SingleInstanceListener(on_activate=lambda: local_calls.append(1))
+    li._msg_id = 7
+    li._handle_message(7)
+    assert local_calls == [1]
+    assert global_calls == []
+    singleinstance.set_activation_handler(None)
+
+
+def test_activation_handler_unset_is_noop(monkeypatch):
+    # 未注册 handler 时收到广播是 no-op（启动窗口内广播不炸）
+    monkeypatch.setattr(singleinstance, "_activation_handler", None)
+    li = singleinstance.SingleInstanceListener()
+    li._msg_id = 5
+    li._handle_message(5)                              # 不得抛

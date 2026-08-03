@@ -9,6 +9,24 @@ fail-open（放行启动），绝不阻断应用启动。
 import sys
 import threading
 
+_activation_handler = None  # 模块级窗口激活回调：NoteApp 就绪后经 set_activation_handler 注册
+
+
+def set_activation_handler(fn):
+    """注册窗口激活回调（传 None 可重置）；由 NoteApp 就绪时调用。
+
+    监听线程触发时经 _dispatch_activation 分派到此回调（仅入队，不碰 Tk）。
+    """
+    global _activation_handler
+    _activation_handler = fn
+
+
+def _dispatch_activation():
+    # 监听线程收到广播时的默认分派：handler 未注册（启动窗口内）为 no-op
+    if _activation_handler is not None:
+        _activation_handler()
+
+
 MUTEX_NAME = "SimpleNote.SingleInstance"
 ACTIVATE_MSG_NAME = "SimpleNote.Activate"
 WINDOW_CLASS = "SimpleNoteSingleInstanceWnd"
@@ -108,9 +126,9 @@ class SingleInstanceListener(threading.Thread):
 
     daemon = True
 
-    def __init__(self, on_activate, msg_name=ACTIVATE_MSG_NAME):
+    def __init__(self, on_activate=None, msg_name=ACTIVATE_MSG_NAME):
         super().__init__()
-        self._on_activate = on_activate
+        self._on_activate = on_activate or _dispatch_activation
         self._msg_name = msg_name
         self._msg_id = 0
         self._thread_id = 0
