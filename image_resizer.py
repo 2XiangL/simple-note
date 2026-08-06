@@ -1,7 +1,8 @@
 """ImageResizer：双击图片后的 8 点缩放浮层。
 
 无边框 Toplevel + 透明色（Windows -transparentcolor）：选框与 8 个手柄可见，
-图片在编辑器中实时缩放并可见。角手柄锁纵横比，边手柄单方向；Enter 确认、Esc 取消。
+图片在编辑器中实时缩放并可见。角手柄锁纵横比，边手柄单方向；
+Enter / 点击浮层外的编辑器区域确认，Esc 取消；主窗口最小化自动确认关闭。
 """
 
 import tkinter as tk
@@ -50,8 +51,16 @@ class ImageResizer:
         for seq in ("<Configure>", "<MouseWheel>", "<Up>", "<Down>", "<Prior>", "<Next>"):
             cbid = editor.bind(seq, self._on_editor_changed, add="+")
             self._binds.append((seq, cbid))
-        # 不自动确认：焦点意外离开（如临时切窗）不应静默确认缩放，
-        # 只能显式确认（Enter）/取消（Esc/Delete）。
+        # 点击浮层外的编辑器区域 = 显式确认（等同 Enter）：浮层 topmost 且盖住图片，
+        # 能落到编辑器的点击必然在选区之外；不加 "break"，光标照常落点。
+        self._binds.append((
+            "<Button-1>", editor.bind("<Button-1>", lambda e: self._confirm(), add="+")))
+        # 主窗口最小化时编辑器 Unmap，但 topmost 浮层不跟随消失：主动确认关闭，
+        # 避免选框孤悬桌面（与 tray 隐藏走 end_resize 的语义一致）。
+        self._binds.append((
+            "<Unmap>", editor.bind("<Unmap>", lambda e: self._confirm(), add="+")))
+        # 焦点意外离开（如临时切窗）不自动确认：只能显式确认（Enter/点击）
+        # 或取消（Esc/Delete）。
 
     def _live_size(self):
         return self.editor.image_display_size(self.img_id) or (self.orig_w, self.orig_h)

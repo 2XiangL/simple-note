@@ -752,6 +752,37 @@ def test_resizer_cancel_restores_original_size(tk_root):
         top.destroy()
 
 
+def test_resizer_click_elsewhere_in_editor_confirms(tk_root):
+    # 点击浮层外的编辑器区域 = 显式确认（等同 Enter）：关闭浮层并保留当前尺寸
+    top, ed, img_id = _open_resizer(tk_root)
+    try:
+        ed.set_image_size(img_id, 60, 45)  # 模拟拖拽中的实时缩放
+        ed._resizer._refresh()
+        bbox = ed.bbox("1.0")              # 正文 "a" 处：浮层盖住图片，此处必然在浮层外
+        assert bbox is not None
+        ed.event_generate("<Button-1>", x=bbox[0] + 1, y=bbox[1] + 1)
+        top.update()
+        assert ed._resizer is None
+        assert ed.image_display_size(img_id) == (60, 45)  # 确认语义：保留已缩放的尺寸
+    finally:
+        top.destroy()
+
+
+def test_resizer_minimize_confirms_and_closes(tk_root):
+    # 最小化主窗口：编辑器 Unmap，topmost 浮层不会跟随消失，须主动确认关闭，
+    # 避免选框孤悬桌面（与 tray 隐藏时 end_resize 语义一致）
+    top, ed, img_id = _open_resizer(tk_root)
+    try:
+        ed.set_image_size(img_id, 60, 45)
+        ed._resizer._refresh()
+        top.iconify()
+        tk_root.update()
+        assert ed._resizer is None
+        assert ed.image_display_size(img_id) == (60, 45)
+    finally:
+        top.destroy()
+
+
 def test_find_matches_counts_and_case(tk_root):
     ed = editor.RichTextEditor(tk_root)
     ed.insert_plain("Foo foo FOO bar")
