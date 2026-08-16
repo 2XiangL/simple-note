@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import lang
 import settings
 
 
@@ -443,3 +444,49 @@ def test_noteapp_registers_activation_handler(tk_root, monkeypatch):
     finally:
         app._real_quit()                              # 清理：停 tray、销毁 root
         singleinstance.set_activation_handler(None)   # 清理模块级回调
+
+
+def test_menus_and_title_english_in_en_mode(tk_root, monkeypatch):
+    # en 模式下主窗口菜单/默认标题为英文；行距显示层翻译、内部值仍为中文键
+    import app as appmod
+
+    class _FakeTray:
+        def __init__(self, root, on_quit, on_hide):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def enqueue(self, fn):
+            pass
+
+        def show(self):
+            pass
+
+        def hide(self):
+            pass
+
+        def is_running(self):
+            return True
+
+    monkeypatch.setattr(appmod, "TrayController", _FakeTray)
+    monkeypatch.setattr(appmod.settings, "save_settings", lambda *a, **k: None)
+    lang.set_language("en")
+    try:
+        app = appmod.NoteApp(tk_root)
+        try:
+            assert app.docs[0].title == "Untitled"
+            menubar = tk_root.nametowidget(tk_root.cget("menu"))
+            labels = [menubar.entrycget(i, "label") for i in range(menubar.index("end") + 1)]
+            assert labels == ["File", "Edit", "View", "Reminder", "About"]
+            view_idx = labels.index("View")
+            view_menu = menubar.nametowidget(menubar.entrycget(view_idx, "menu"))
+            view_labels = [view_menu.entrycget(i, "label") for i in range(view_menu.index("end") + 1)]
+            assert view_labels == ["Compact", "Standard", "Relaxed"]
+        finally:
+            app._real_quit()
+    finally:
+        lang.set_language("zh")
