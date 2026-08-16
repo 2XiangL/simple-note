@@ -474,6 +474,7 @@ def test_menus_and_title_english_in_en_mode(tk_root, monkeypatch):
 
     monkeypatch.setattr(appmod, "TrayController", _FakeTray)
     monkeypatch.setattr(appmod.settings, "save_settings", lambda *a, **k: None)
+    saved = lang.get_language()
     lang.set_language("en")
     try:
         app = appmod.NoteApp(tk_root)
@@ -486,7 +487,12 @@ def test_menus_and_title_english_in_en_mode(tk_root, monkeypatch):
             view_menu = menubar.nametowidget(menubar.entrycget(view_idx, "menu"))
             view_labels = [view_menu.entrycget(i, "label") for i in range(view_menu.index("end") + 1)]
             assert view_labels == ["Compact", "Standard", "Relaxed"]
+            assert menubar.entrycget(0, "label") == "File"
+            file_menu = menubar.nametowidget(menubar.entrycget(0, "menu"))
+            file_labels = [file_menu.entrycget(i, "label") for i in range(file_menu.index("end") + 1)
+                           if file_menu.type(i) != "separator"]
+            assert file_labels == ["New", "Open", "Open Workspace...", "Save", "Save As", "Quit"]
         finally:
             app._real_quit()
     finally:
-        lang.set_language("zh")
+        lang.set_language(saved)

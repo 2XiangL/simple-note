@@ -1,5 +1,7 @@
 """lang 模块：语言检测、覆盖与翻译。无显示器可跑。"""
 
+import locale
+
 import lang
 
 
@@ -21,6 +23,18 @@ def test_detect_falls_back_to_locale(monkeypatch):
     monkeypatch.setattr(lang, "_locale_code", lambda: "en_US.UTF-8")
     assert lang.detect_system_language() == "en"
     monkeypatch.setattr(lang, "_locale_code", lambda: None)  # 无法判定 -> en
+    assert lang.detect_system_language() == "en"
+
+
+def test_detect_falls_back_to_lang_env(monkeypatch):
+    def _no_locale(*a, **k):
+        raise RuntimeError("no locale")
+
+    monkeypatch.setattr(lang, "_win_lcid", lambda: None)  # 非 Windows / 调用失败
+    monkeypatch.setattr(locale, "getlocale", _no_locale)  # locale 也失败
+    monkeypatch.setenv("LANG", "zh_TW.UTF-8")  # 回退 LANG 环境变量
+    assert lang.detect_system_language() == "zh"
+    monkeypatch.setenv("LANG", "en_US")
     assert lang.detect_system_language() == "en"
 
 
@@ -71,7 +85,9 @@ def test_en_dict_complete_and_nonempty():
 def test_en_dict_covers_all_t_callsites():
     """扫描仓库根目录 *.py 中所有 t("...") 调用点，key 必须都在 EN_TRANSLATIONS。
 
-    防漏译：新 UI 文案忘了补译文时，en 模式会退化为中文，本测试即失败。
+    注意：扫描正则只匹配双引号字面量，t() 调用点必须写双引号 t("...")，
+    单引号（或 f-string 拼接）会逃过扫描。防漏译：新 UI 文案忘了补译文时，
+    en 模式会退化为中文，本测试即失败。
     """
     import ast
     import re

@@ -57,6 +57,7 @@ def test_remove_unknown_doc_is_noop(tk_root):
 
 
 def test_context_menu_english_in_en_mode(tk_root):
+    saved = lang.get_language()
     lang.set_language("en")
     try:
         p = _panel(tk_root)
@@ -64,4 +65,4 @@ def test_context_menu_english_in_en_mode(tk_root):
                   if p.menu.type(i) != "separator"]
         assert labels == ["Save", "Save As", "Close"]
     finally:
-        lang.set_language("zh")
+        lang.set_language(saved)

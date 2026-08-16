@@ -118,7 +118,7 @@ _lang = None  # None = 尚未确定（首次 get_language() 惰性检测）
 
 
 def _win_lcid():
-    """Windows 用户界面语言 LCID；非 Windows 或 API 失败返回 None。"""
+    """Windows 用户界面语言 LANGID（GetUserDefaultUILanguage 返回 LANGID）；非 Windows 或 API 失败返回 None。"""
     if sys.platform != "win32":
         return None
     try:

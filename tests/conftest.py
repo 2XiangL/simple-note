@@ -1,3 +1,4 @@
+import lang
 import tkinter as tk
 
 import pytest
@@ -16,9 +17,6 @@ def tk_root():
         root.destroy()
     except Exception:
         pass
-
-
-import lang
 
 
 @pytest.fixture(autouse=True)

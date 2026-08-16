@@ -172,7 +172,7 @@ class ReminderScheduler:
         return self._phase
 
     def pomodoro_remaining(self, now=None):
-        """idle -> None；否则 (阶段中文, "MM:SS", "第N/共M轮")。"""
+        """idle -> None；否则 (阶段文案, "MM:SS", "第N/共M轮")。"""
         if self._phase == PHASE_IDLE or self._phase_end is None:
             return None
         now = now or self._now_fn()

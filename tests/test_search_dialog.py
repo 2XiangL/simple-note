@@ -109,6 +109,7 @@ def test_dialog_close_clears_last_highlighted_editor(tk_root):
 
 
 def test_dialog_status_english_in_en_mode(tk_root):
+    saved = lang.get_language()
     lang.set_language("en")
     try:
         ed, dlg = _make(tk_root, "a b a")
@@ -122,4 +123,4 @@ def test_dialog_status_english_in_en_mode(tk_root):
         finally:
             dlg._on_close()
     finally:
-        lang.set_language("zh")
+        lang.set_language(saved)
