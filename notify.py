@@ -4,6 +4,8 @@ import os
 import sys
 from tkinter import messagebox
 
+from lang import t
+
 
 def resolve_sound(sound_cfg):
     """纯函数：决定播放哪种提示音。
@@ -31,8 +33,8 @@ def format_events(events):
     if len(events) == 1:
         ev = events[0]
         return ev["title"], ev["message"]
-    lines = ["%s：%s" % (ev["title"], ev["message"]) for ev in events]
-    return "提醒", "\n".join(lines)
+    lines = [t("%s：%s") % (ev["title"], ev["message"]) for ev in events]
+    return t("提醒"), "\n".join(lines)
 
 
 def _play_sound(sound_cfg, root):

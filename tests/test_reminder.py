@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+import lang
 import reminder
 from reminder import ReminderScheduler
 
@@ -390,3 +391,25 @@ def test_public_boundary_constants():
     assert reminder.sanitize_pomodoro({"work_min": 999, "break_min": 0, "rounds": 99}) == {
         "work_min": 180, "break_min": 1, "rounds": 12,
     }   # 边界常量与清洗行为一致
+
+
+def test_pomodoro_remaining_english(monkeypatch):
+    lang.set_language("en")
+    try:
+        s = reminder.ReminderScheduler(now_fn=lambda: datetime(2026, 8, 2, 10, 0))
+        s.start_pomodoro(datetime(2026, 8, 2, 10, 0))
+        assert s.pomodoro_remaining() == ("Working", "25:00", "Round 1/4")
+    finally:
+        lang.set_language("zh")
+
+
+def test_tick_events_english(monkeypatch):
+    lang.set_language("en")
+    try:
+        s = reminder.ReminderScheduler(now_fn=lambda: datetime(2026, 8, 2, 10, 0))
+        s.start_pomodoro(datetime(2026, 8, 2, 9, 30))  # 工作 25 分钟后到期
+        ev = s.tick(datetime(2026, 8, 2, 9, 55))
+        assert ev and ev[0]["title"] == "Work finished"
+        assert "Round 1" in ev[0]["message"]
+    finally:
+        lang.set_language("zh")

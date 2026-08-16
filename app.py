@@ -18,8 +18,12 @@ import singleinstance
 from notes_panel import NotesPanel
 from toolbar import FormatToolbar
 from search_dialog import SearchDialog
+from lang import t
 
-NOTE_FILTER = [("Simple Note", "*.snote"), ("所有文件", "*.*")]
+
+def note_filter():
+    """文件对话框过滤（惰性取当前语言）。"""
+    return [("Simple Note", "*.snote"), (t("所有文件"), "*.*")]
 
 
 class NoteDocument:
@@ -27,7 +31,7 @@ class NoteDocument:
         self.frame = frame
         self.editor = editor
         self.path = path
-        self.title = title or (Path(path).name if path else "新建笔记")
+        self.title = title or (Path(path).name if path else t("新建笔记"))
         self.dirty = False
 
     def mark_dirty(self):
@@ -95,37 +99,37 @@ class NoteApp:
     def _build_menu(self):
         menubar = tk.Menu(self.root)
         file_menu = tk.Menu(menubar, tearoff=0)
-        file_menu.add_command(label="新建", command=self.new_doc, accelerator="Ctrl+N")
-        file_menu.add_command(label="打开", command=self.open_doc, accelerator="Ctrl+O")
-        file_menu.add_command(label="打开工作区...", command=self.open_workspace, accelerator="Ctrl+Shift+O")
+        file_menu.add_command(label=t("新建"), command=self.new_doc, accelerator="Ctrl+N")
+        file_menu.add_command(label=t("打开"), command=self.open_doc, accelerator="Ctrl+O")
+        file_menu.add_command(label=t("打开工作区..."), command=self.open_workspace, accelerator="Ctrl+Shift+O")
         file_menu.add_separator()
-        file_menu.add_command(label="保存", command=lambda: self.save(self.active), accelerator="Ctrl+S")
-        file_menu.add_command(label="另存为", command=lambda: self.save_as(self.active))
+        file_menu.add_command(label=t("保存"), command=lambda: self.save(self.active), accelerator="Ctrl+S")
+        file_menu.add_command(label=t("另存为"), command=lambda: self.save_as(self.active))
         file_menu.add_separator()
-        file_menu.add_command(label="退出", command=self._real_quit)
-        menubar.add_cascade(label="文件", menu=file_menu)
+        file_menu.add_command(label=t("退出"), command=self._real_quit)
+        menubar.add_cascade(label=t("文件"), menu=file_menu)
 
         edit_menu = tk.Menu(menubar, tearoff=0)
-        edit_menu.add_command(label="查找...", command=self._open_search_dialog, accelerator="Ctrl+F")
-        menubar.add_cascade(label="编辑", menu=edit_menu)
+        edit_menu.add_command(label=t("查找..."), command=self._open_search_dialog, accelerator="Ctrl+F")
+        menubar.add_cascade(label=t("编辑"), menu=edit_menu)
 
         view_menu = tk.Menu(menubar, tearoff=0)
         for name in settings.PRESET_ORDER:
             view_menu.add_radiobutton(
-                label=name, value=name, variable=self._ls_var, command=self._on_line_spacing
+                label=t(name), value=name, variable=self._ls_var, command=self._on_line_spacing
             )
-        menubar.add_cascade(label="查看", menu=view_menu)
+        menubar.add_cascade(label=t("查看"), menu=view_menu)
 
         remind_menu = tk.Menu(menubar, tearoff=0)
-        remind_menu.add_command(label="管理提醒...", command=self._open_reminder_dialog)
+        remind_menu.add_command(label=t("管理提醒..."), command=self._open_reminder_dialog)
         remind_menu.add_separator()
-        remind_menu.add_command(label="开始番茄钟", command=self._start_pomodoro)
-        remind_menu.add_command(label="停止番茄钟", command=self._stop_pomodoro)
-        menubar.add_cascade(label="提醒", menu=remind_menu)
+        remind_menu.add_command(label=t("开始番茄钟"), command=self._start_pomodoro)
+        remind_menu.add_command(label=t("停止番茄钟"), command=self._stop_pomodoro)
+        menubar.add_cascade(label=t("提醒"), menu=remind_menu)
 
         help_menu = tk.Menu(menubar, tearoff=0)
-        help_menu.add_command(label="关于程序", command=self.about)
-        menubar.add_cascade(label="关于", menu=help_menu)
+        help_menu.add_command(label=t("关于程序"), command=self.about)
+        menubar.add_cascade(label=t("关于"), menu=help_menu)
         self.root.configure(menu=menubar)
 
         self.root.bind("<Control-n>", lambda e: self.new_doc())
@@ -171,7 +175,7 @@ class NoteApp:
 
     def _refresh_title(self, now=None):
         rem = self.scheduler.pomodoro_remaining(now)
-        title = "Simple Note" if rem is None else "Simple Note — %s %s（%s）" % rem
+        title = "Simple Note" if rem is None else t("Simple Note — %s %s（%s）") % rem
         if title != self._title_cache:
             self._title_cache = title
             self.root.title(title)
@@ -261,7 +265,7 @@ class NoteApp:
         return self._make_doc(path=path, title=os.path.basename(path), document=document, blobs=blobs)
 
     def open_doc(self):
-        path = filedialog.askopenfilename(title="打开笔记", filetypes=NOTE_FILTER)
+        path = filedialog.askopenfilename(title=t("打开笔记"), filetypes=note_filter())
         if not path:
             return
         existing = self._find_open_doc(path)
@@ -271,22 +275,22 @@ class NoteApp:
         try:
             doc = self._load_path(path)
         except Exception as exc:
-            messagebox.showerror("打开失败", "无法打开该文件：%s" % exc)
+            messagebox.showerror(t("打开失败"), t("无法打开该文件：%s") % exc)
             return
         doc.dirty = False
         self.add_doc(doc)
 
     def open_workspace(self):
-        directory = filedialog.askdirectory(title="打开工作区")
+        directory = filedialog.askdirectory(title=t("打开工作区"))
         if not directory:
             return
         try:
             files = sorted(Path(directory).rglob("*.snote"), key=lambda p: os.path.normcase(str(p)))
         except OSError as exc:
-            messagebox.showerror("打开工作区", "扫描目录失败：%s" % exc)
+            messagebox.showerror(t("打开工作区"), t("扫描目录失败：%s") % exc)
             return
         if not files:
-            messagebox.showinfo("打开工作区", "该目录下没有 .snote 笔记文件。")
+            messagebox.showinfo(t("打开工作区"), t("该目录下没有 .snote 笔记文件。"))
             return
         loaded = 0
         skipped = 0
@@ -299,7 +303,7 @@ class NoteApp:
             try:
                 doc = self._load_path(path)
             except Exception as exc:
-                failures.append("%s：%s" % (os.path.relpath(p, directory), exc))
+                failures.append(t("%s：%s") % (os.path.relpath(p, directory), exc))
                 continue
             doc.dirty = False
             self.add_doc(doc)
@@ -307,10 +311,10 @@ class NoteApp:
         if failures:
             lines = failures[:10]
             if len(failures) > 10:
-                lines.append("…等 %d 个" % len(failures))
+                lines.append(t("…等 %d 个") % len(failures))
             messagebox.showwarning(
-                "打开工作区",
-                "已加载 %d 个，跳过重复 %d 个，失败 %d 个：\n%s"
+                t("打开工作区"),
+                t("已加载 %d 个，跳过重复 %d 个，失败 %d 个：\n%s")
                 % (loaded, skipped, len(failures), "\n".join(lines)),
             )
 
@@ -322,7 +326,7 @@ class NoteApp:
             return True
         except Exception as exc:
             # 除磁盘 OSError 外，PIL 编码/Tcl 等异常也走“保存失败”弹框，不裸抛
-            messagebox.showerror("保存失败", "写入失败：%s" % exc)
+            messagebox.showerror(t("保存失败"), t("写入失败：%s") % exc)
             return False
 
     def save(self, doc):
@@ -339,7 +343,7 @@ class NoteApp:
         if doc is None:
             return
         path = filedialog.asksaveasfilename(
-            title="另存为", defaultextension=".snote", filetypes=NOTE_FILTER
+            title=t("另存为"), defaultextension=".snote", filetypes=note_filter()
         )
         if not path:
             return
@@ -392,7 +396,7 @@ class NoteApp:
     # ---- 退出/提示 ----
     def _confirm_save(self, doc):
         ans = messagebox.askyesnocancel(
-            "Simple Note", "“%s”未保存，是否保存？" % doc.title
+            "Simple Note", t("“%s”未保存，是否保存？") % doc.title
         )
         if ans is None:
             return False
@@ -420,4 +424,4 @@ class NoteApp:
         self.root.destroy()
 
     def about(self):
-        messagebox.showinfo("关于 Simple Note", "Simple Note\n轻量化本地便签工具\nTkinter + Pillow")
+        messagebox.showinfo(t("关于 Simple Note"), t("Simple Note\n轻量化本地便签工具\nTkinter + Pillow"))

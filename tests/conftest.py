@@ -1,3 +1,4 @@
+import lang
 import tkinter as tk
 
 import pytest
@@ -16,3 +17,12 @@ def tk_root():
         root.destroy()
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _force_lang_zh():
+    """强制 zh 语言：现有测试断言中文文案，须与运行机系统语言解耦。"""
+    saved = lang.get_language()
+    lang.set_language("zh")
+    yield
+    lang.set_language(saved)

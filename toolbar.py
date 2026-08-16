@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import colorchooser, ttk
 
 import util
+from lang import t
 
 
 class FormatToolbar(ttk.Frame):
@@ -13,7 +14,7 @@ class FormatToolbar(ttk.Frame):
         self._build()
 
     def _build(self):
-        self.color_btn = ttk.Button(self, text="颜色", width=6, command=self.on_color)
+        self.color_btn = ttk.Button(self, text=t("颜色"), width=6, command=self.on_color)
         self.color_btn.pack(side=tk.LEFT, padx=2, pady=2)
 
         self.size_var = tk.StringVar(value=str(util.DEFAULT_SIZE))
@@ -45,7 +46,7 @@ class FormatToolbar(ttk.Frame):
     def on_color(self):
         if not self.editor:
             return
-        _, hexcolor = colorchooser.askcolor(title="选择颜色")
+        _, hexcolor = colorchooser.askcolor(title=t("选择颜色"))
         if hexcolor:
             self.editor.apply_style_to_selection({"fg": hexcolor})
 

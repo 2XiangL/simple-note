@@ -6,6 +6,9 @@ from tkinter import messagebox
 
 import singleinstance
 
+import lang
+from lang import t
+
 _GUARD = None    # 单实例互斥体句柄：须持有至进程退出（OS 退出时自动释放）
 _LISTENER = None  # 单实例监听线程（早于 Tk 创建，消除启动竞态）
 
@@ -34,7 +37,7 @@ def _startup():
     except Exception:
         root = tk.Tk()
         root.withdraw()
-        messagebox.showwarning("Simple Note", "未检测到 Pillow，图片粘贴/缩放功能将不可用。")
+        messagebox.showwarning("Simple Note", t("未检测到 Pillow，图片粘贴/缩放功能将不可用。"))
         root.destroy()
         # 缺少 Pillow 时 app→tray 顶层 import PIL 必然 ImportError，探测后直接退出，
         # 不让用户看到带病启动后的裸异常栈。
@@ -48,6 +51,7 @@ def _startup():
 
 def main():
     global _GUARD
+    lang.set_language(lang.detect_system_language())
     _GUARD = singleinstance.acquire()
     if _GUARD is None:
         # 已有实例在运行：尽力激活其窗口，本进程静默退出（不创建任何 Tk 对象）

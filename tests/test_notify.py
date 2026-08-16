@@ -1,3 +1,4 @@
+import lang
 import notify
 
 
@@ -59,3 +60,15 @@ def test_format_events_single_and_multi():
         {"kind": "daily", "title": "每日提醒", "message": "喝水"},
     ]
     assert notify.format_events(many) == ("提醒", "工作结束：休息\n每日提醒：喝水")
+
+
+def test_format_events_english():
+    lang.set_language("en")
+    try:
+        many = [
+            {"kind": "pomodoro", "title": "Work finished", "message": "Break"},
+            {"kind": "daily", "title": "Daily Reminder", "message": "喝水"},
+        ]
+        assert notify.format_events(many) == ("Reminder", "Work finished: Break\nDaily Reminder: 喝水")
+    finally:
+        lang.set_language("zh")
