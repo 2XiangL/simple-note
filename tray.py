@@ -15,6 +15,8 @@ import queue
 import threading
 from PIL import Image, ImageDraw, ImageFont
 
+from lang import t
+
 # Win32 热键相关常量
 _MOD_ALT = 0x0001
 _MOD_CONTROL = 0x0002
@@ -169,8 +171,8 @@ class TrayController:
             self._hotkey.start()
 
         menu = pystray.Menu(
-            MenuItem("显示/隐藏", self._on_menu_toggle),
-            MenuItem("退出", self._on_menu_quit),
+            MenuItem(t("显示/隐藏"), self._on_menu_toggle),
+            MenuItem(t("退出"), self._on_menu_quit),
         )
         self._icon = pystray.Icon("simple-note", make_icon_image(), "Simple Note", menu)
         self._icon.run_detached()

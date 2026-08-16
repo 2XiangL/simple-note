@@ -1,4 +1,5 @@
 import editor
+import lang
 from search_dialog import SearchDialog
 
 
@@ -105,3 +106,20 @@ def test_dialog_close_clears_last_highlighted_editor(tk_root):
     dlg._on_close()
     assert not ed1.tag_ranges("search_all")
     assert not dlg.winfo_exists()
+
+
+def test_dialog_status_english_in_en_mode(tk_root):
+    lang.set_language("en")
+    try:
+        ed, dlg = _make(tk_root, "a b a")
+        try:
+            assert dlg.title() == "Find"
+            dlg._var.set("a")
+            dlg._find_next()
+            assert dlg._status.cget("text") == "1/2"
+            dlg._var.set("zzz")
+            assert dlg._status.cget("text") == "No matches"
+        finally:
+            dlg._on_close()
+    finally:
+        lang.set_language("zh")

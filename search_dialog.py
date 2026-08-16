@@ -3,13 +3,15 @@
 import tkinter as tk
 from tkinter import ttk
 
+from lang import t
+
 
 class SearchDialog(tk.Toplevel):
     """当前文档查找：经 editor_provider 回调取活动编辑器，自动跟随文档切换。"""
 
     def __init__(self, master, editor_provider):
         super().__init__(master)
-        self.title("查找")
+        self.title(t("查找"))
         self._editor_provider = editor_provider
         self._last_ed = None
         self._build_ui()
@@ -26,11 +28,11 @@ class SearchDialog(tk.Toplevel):
         self._entry.bind("<Return>", lambda e: self._find_next())
         self._entry.bind("<Shift-Return>", lambda e: self._find_prev())
         self._entry.bind("<Escape>", lambda e: self._on_close() or "break")
-        ttk.Button(bar, text="上一个", width=6, command=self._find_prev).pack(side=tk.LEFT, padx=(6, 0))
-        ttk.Button(bar, text="下一个", width=6, command=self._find_next).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(bar, text=t("上一个"), width=6, command=self._find_prev).pack(side=tk.LEFT, padx=(6, 0))
+        ttk.Button(bar, text=t("下一个"), width=6, command=self._find_next).pack(side=tk.LEFT, padx=(6, 0))
         self._case_var = tk.BooleanVar(value=False)
         self._case_var.trace_add("write", lambda *_: self._on_entry_change())
-        ttk.Checkbutton(bar, text="区分大小写", variable=self._case_var).pack(side=tk.LEFT, padx=6)
+        ttk.Checkbutton(bar, text=t("区分大小写"), variable=self._case_var).pack(side=tk.LEFT, padx=6)
         self._status = ttk.Label(bar, text="")
         self._status.pack(side=tk.LEFT, padx=4)
 
@@ -60,7 +62,7 @@ class SearchDialog(tk.Toplevel):
         case = self._case_var.get()
         n = len(ed.highlight_search(pattern, case, None))
         self._mark_highlighted(ed)
-        self._set_status("共 %d 处" % n if n else "无匹配")
+        self._set_status(t("共 %d 处") % n if n else t("无匹配"))
 
     def _find_next(self):
         self._step(lambda ed, p, c: ed.search_next(p, c))
@@ -81,7 +83,7 @@ class SearchDialog(tk.Toplevel):
             self._mark_highlighted(ed)
             self._set_status("%d/%d" % result)
         else:
-            self._set_status("无匹配")
+            self._set_status(t("无匹配"))
 
     def _set_status(self, text):
         self._status.configure(text=text)

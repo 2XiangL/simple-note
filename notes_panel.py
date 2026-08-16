@@ -3,6 +3,8 @@
 import tkinter as tk
 from tkinter import ttk
 
+from lang import t
+
 
 class NotesPanel(ttk.Frame):
     def __init__(self, master=None, on_switch=None, on_save=None, on_save_as=None, on_close=None):
@@ -23,10 +25,10 @@ class NotesPanel(ttk.Frame):
         self.listbox.bind("<Button-3>", self._on_right_click)
 
         self.menu = tk.Menu(self, tearoff=0)
-        self.menu.add_command(label="保存", command=self._menu_save)
-        self.menu.add_command(label="另存为", command=self._menu_save_as)
+        self.menu.add_command(label=t("保存"), command=self._menu_save)
+        self.menu.add_command(label=t("另存为"), command=self._menu_save_as)
         self.menu.add_separator()
-        self.menu.add_command(label="关闭", command=self._menu_close)
+        self.menu.add_command(label=t("关闭"), command=self._menu_close)
 
     def add(self, doc):
         self._docs.append(doc)

@@ -1,3 +1,4 @@
+import lang
 from notes_panel import NotesPanel
 
 
@@ -53,3 +54,14 @@ def test_remove_unknown_doc_is_noop(tk_root):
     p.add(d1)
     p.remove(_FakeDoc("不在列表"))
     assert p.selected_doc() is d1
+
+
+def test_context_menu_english_in_en_mode(tk_root):
+    lang.set_language("en")
+    try:
+        p = _panel(tk_root)
+        labels = [p.menu.entrycget(i, "label") for i in range(p.menu.index("end") + 1)
+                  if p.menu.type(i) != "separator"]
+        assert labels == ["Save", "Save As", "Close"]
+    finally:
+        lang.set_language("zh")
