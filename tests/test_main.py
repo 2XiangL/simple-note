@@ -95,9 +95,12 @@ def test_main_first_instance_starts_listener_before_tk_and_stops_after(monkeypat
 
 
 def test_main_sets_language_from_detection(monkeypatch):
-    monkeypatch.setattr(main.singleinstance, "acquire", lambda: None)
+    calls = []
+    monkeypatch.setattr(lang, "set_language", lambda v: calls.append(("set_language", v)))
+    monkeypatch.setattr(main.singleinstance, "acquire",
+                        lambda: calls.append(("acquire",)) or None)
     monkeypatch.setattr(main.singleinstance, "activate_existing", lambda: None)
-    lang.set_language(None)
     monkeypatch.setattr(lang, "detect_system_language", lambda: "en")
     main.main()
-    assert lang.get_language() == "en"
+    assert calls and calls[0] == ("set_language", "en")
+    assert calls.index(("set_language", "en")) < calls.index(("acquire",))
