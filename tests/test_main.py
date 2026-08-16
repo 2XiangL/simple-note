@@ -1,3 +1,4 @@
+import lang
 import main
 
 
@@ -91,3 +92,12 @@ def test_main_first_instance_starts_listener_before_tk_and_stops_after(monkeypat
     monkeypatch.setattr(appmod, "NoteApp", lambda root: events.append("noteapp"))
     main.main()
     assert events == ["listener-start", "tk", "noteapp", "mainloop", "listener-stop"]
+
+
+def test_main_sets_language_from_detection(monkeypatch):
+    monkeypatch.setattr(main.singleinstance, "acquire", lambda: None)
+    monkeypatch.setattr(main.singleinstance, "activate_existing", lambda: None)
+    lang.set_language(None)
+    monkeypatch.setattr(lang, "detect_system_language", lambda: "en")
+    main.main()
+    assert lang.get_language() == "en"
