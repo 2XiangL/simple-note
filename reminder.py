@@ -3,6 +3,8 @@
 import uuid
 from datetime import datetime, timedelta
 
+from lang import t
+
 DEFAULT_POMODORO = {"work_min": 25, "break_min": 5, "rounds": 4}
 
 # 番茄钟参数边界（工作/休息时长、轮数），供 sanitize_pomodoro 与对话框 spinbox 共用。
@@ -176,8 +178,8 @@ class ReminderScheduler:
         now = now or self._now_fn()
         total = max(0, int((self._phase_end - now).total_seconds()))
         mm, ss = divmod(total, 60)
-        phase_cn = "工作中" if self._phase == PHASE_WORK else "休息中"
-        return (phase_cn, "%02d:%02d" % (mm, ss), "第%d/共%d轮" % (self._round, self._pomodoro["rounds"]))
+        phase = t("工作中") if self._phase == PHASE_WORK else t("休息中")
+        return (phase, "%02d:%02d" % (mm, ss), t("第%d/共%d轮") % (self._round, self._pomodoro["rounds"]))
 
     # ---- 主循环 ----
     def arm(self, now=None):
@@ -206,17 +208,17 @@ class ReminderScheduler:
         while self._phase != PHASE_IDLE and self._phase_end is not None and now >= self._phase_end:
             if self._phase == PHASE_WORK:
                 if self._round >= self._pomodoro["rounds"]:
-                    last_msg = ("番茄钟完成", "已完成全部 %d 轮，休息一下吧。" % self._pomodoro["rounds"])
+                    last_msg = (t("番茄钟完成"), t("已完成全部 %d 轮，休息一下吧。") % self._pomodoro["rounds"])
                     self._phase = PHASE_IDLE
                     self._round = 0
                     self._phase_end = None
                     break
-                last_msg = ("工作结束", "第 %d 轮工作结束，休息 %d 分钟。" % (self._round, self._pomodoro["break_min"]))
+                last_msg = (t("工作结束"), t("第 %d 轮工作结束，休息 %d 分钟。") % (self._round, self._pomodoro["break_min"]))
                 self._phase = PHASE_BREAK
                 self._phase_end = self._phase_end + timedelta(minutes=self._pomodoro["break_min"])
             else:  # PHASE_BREAK
                 self._round += 1
-                last_msg = ("休息结束", "开始第 %d 轮工作（%d 分钟）。" % (self._round, self._pomodoro["work_min"]))
+                last_msg = (t("休息结束"), t("开始第 %d 轮工作（%d 分钟）。") % (self._round, self._pomodoro["work_min"]))
                 self._phase = PHASE_WORK
                 self._phase_end = self._phase_end + timedelta(minutes=self._pomodoro["work_min"])
         if last_msg is None:
@@ -236,7 +238,7 @@ class ReminderScheduler:
                 # 与 fired 条目的移除生命周期一致，非数据丢失
                 continue
             if due:
-                events.append({"kind": "oneshot", "title": "提醒", "message": label})
+                events.append({"kind": "oneshot", "title": t("提醒"), "message": label})
             else:
                 remaining.append(e)
         self._oneshot = remaining
@@ -252,5 +254,5 @@ class ReminderScheduler:
             except (ValueError, TypeError):
                 continue
             if self._last_tick < occ <= now:
-                events.append({"kind": "daily", "title": "每日提醒", "message": e["label"]})
+                events.append({"kind": "daily", "title": t("每日提醒"), "message": e["label"]})
         return events
