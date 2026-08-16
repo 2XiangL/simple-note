@@ -33,6 +33,7 @@ Entry point is `main.py` → `app.NoteApp` (main window, menus, multi-document c
 - `app.open_workspace` — 「打开工作区」：`askdirectory` + `Path.rglob("*.snote")` 递归批量载入，复用 `_find_open_doc`（判重跳过）/`_load_path`（load + _make_doc）两个助手（`open_doc` 同源）；坏文件收集进失败汇总弹框，不阻断其余加载。全程主线程同步，勿引入后台线程。
 - `snote.py` — the `.snote` self-contained file format. A zip with `content.json` (document dict: `version`, `format`, `styles`, `ops`, `images`) plus `images/<id>.png` entries. `load_document` raises `ValueError` on bad zip / missing `content.json` / wrong `format`, but **tolerates missing image blobs** (returns without them; editor renders a placeholder).
 - `util.py` — pure style helpers (`merge_style`, `style_to_font`, `style_to_tag_config`) and clipboard image grab. No Tk state; safe to unit-test directly.
+- `lang.py` — Tk-free 界面语言模块：`detect_system_language()`（Windows 用 `GetUserDefaultUILanguage` LCID 主语言 ID==0x04 判中文，非 Windows/失败回退 locale，英文兜底）+ `set_language`/`get_language`/`t(key)`。**中文原文即 key**：zh 模式原样返回，en 查 `EN_TRANSLATIONS`，缺 key 回退中文。`main.py` 启动最开头锁定语言；`tests/test_lang.py::test_en_dict_covers_all_t_callsites` 扫描全仓库 `t("...")` 调用点保证无漏译——新 UI 文案必须 `t("中文")` 调用并在 `EN_TRANSLATIONS` 补 en 译文。`settings.json` 持久化键（紧凑/标准/宽松）保持中文内部键，仅显示层翻译。
 - `toolbar.py`, `notes_panel.py`, `image_resizer.py` — UI components wired up by `NoteApp`.
 - `imefont.py` — Windows-only IME composition-font sync. `RichTextEditor._sync_ime_font` calls `imefont.set_composition_font` whenever `_current_style` changes (cursor move / style apply / doc load / `<FocusIn>`) so the Chinese-IME preedit/candidate window matches the surrounding font instead of the widget base font. No-op on non-Windows. The visual result can't be unit-tested headlessly — it needs a real Windows IME session.
 - `tray.py` — `TrayController`: pystray tray icon + global hotkey Ctrl+Alt+N (Windows-only, via Win32 `RegisterHotKey` pumped on its own thread). **Tkinter is not thread-safe**: the hotkey-listener thread and pystray menu callbacks must NEVER call Tk directly — they only `_marshal` (enqueue); the main thread drains the queue via `root.after` polling (`_poll`/`_drain`). Tray/hotkey failures are caught and never block app startup (a busy hotkey only prints a warning). Preserve this queue+poll pattern when editing tray logic.
@@ -47,7 +48,7 @@ Images are stored **losslessly**: the original `PIL.Image` source is kept in mem
 
 ## Conventions
 
-- UI strings and code docstrings are written in **Simplified Chinese**. Match this when adding user-facing text or docstrings.
+- UI 文案一律经 `lang.t("中文原文")` 取用，en 译文只加进 `lang.EN_TRANSLATIONS`（见 `test_en_dict_covers_all_t_callsites`）；docstring 与 stderr 开发者警告仍写简体中文。行距单选 `label=t(name)` 但 `value` 保持内部中文键。
 - `_apply_delta_range` / `insert` / `to_document` / `from_document` form the serialization boundary; `to_document()` then `from_document()` must round-trip equal (see `test_roundtrip_*`). Keep them in sync.
 - `.opencode/` is OpenCode tooling, not part of the application.
 - `docs/superpowers/` holds dated design specs/plans from past feature work — background context only; code and tests are the source of truth.
