@@ -47,6 +47,7 @@ Images are stored **losslessly**: the original `PIL.Image` source is kept in mem
 
 ## Conventions
 
+- Commit messages follow **Conventional Commits with scopes**, e.g. `fix(editor): …`, `feat(app): …`, `docs(agents): …`, `build: …`, `test(main): …` (see `git log`). Match this when committing.
 - UI strings and code docstrings are written in **Simplified Chinese**. Match this when adding user-facing text or docstrings.
 - `_apply_delta_range` / `insert` / `to_document` / `from_document` form the serialization boundary; `to_document()` then `from_document()` must round-trip equal (see `test_roundtrip_*`). Keep them in sync.
 - `.opencode/` is OpenCode tooling, not part of the application.
