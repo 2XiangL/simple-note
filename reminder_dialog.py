@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import notify
 import reminder
+from lang import t
 
 
 def _valid_hhmm(hour, minute):
@@ -15,7 +16,7 @@ def _valid_hhmm(hour, minute):
 class ReminderDialog(tk.Toplevel):
     def __init__(self, master, scheduler, sound_cfg, on_change):
         super().__init__(master)
-        self.title("提醒管理")
+        self.title(t("提醒管理"))
         self._scheduler = scheduler
         self._on_change = on_change
         self._sound_cfg = dict(sound_cfg) if isinstance(sound_cfg, dict) else {"mode": "system", "path": ""}
@@ -28,19 +29,19 @@ class ReminderDialog(tk.Toplevel):
 
     # ---- 番茄钟 ----
     def _build_pomodoro(self):
-        frame = ttk.LabelFrame(self, text="番茄钟")
+        frame = ttk.LabelFrame(self, text=t("番茄钟"))
         frame.pack(fill=tk.X, padx=6, pady=4)
         cfg = self._scheduler.pomodoro_config()
         self._work_var = tk.IntVar(value=cfg["work_min"])
         self._break_var = tk.IntVar(value=cfg["break_min"])
         self._rounds_var = tk.IntVar(value=cfg["rounds"])
-        ttk.Label(frame, text="工作(分)").pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame, text=t("工作(分)")).pack(side=tk.LEFT, padx=2)
         ttk.Spinbox(frame, from_=reminder.MIN_WORK_MIN, to=reminder.MAX_WORK_MIN, width=4, textvariable=self._work_var).pack(side=tk.LEFT)
-        ttk.Label(frame, text="休息(分)").pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame, text=t("休息(分)")).pack(side=tk.LEFT, padx=2)
         ttk.Spinbox(frame, from_=reminder.MIN_WORK_MIN, to=reminder.MAX_WORK_MIN, width=4, textvariable=self._break_var).pack(side=tk.LEFT)
-        ttk.Label(frame, text="轮数").pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame, text=t("轮数")).pack(side=tk.LEFT, padx=2)
         ttk.Spinbox(frame, from_=reminder.MIN_ROUNDS, to=reminder.MAX_ROUNDS, width=4, textvariable=self._rounds_var).pack(side=tk.LEFT)
-        self._pomo_btn = ttk.Button(frame, text="开始", width=6, command=self._on_pomo_toggle)
+        self._pomo_btn = ttk.Button(frame, text=t("开始"), width=6, command=self._on_pomo_toggle)
         self._pomo_btn.pack(side=tk.LEFT, padx=6)
         self._pomo_status = ttk.Label(frame, text="")
         self._pomo_status.pack(side=tk.LEFT, padx=4)
@@ -63,7 +64,7 @@ class ReminderDialog(tk.Toplevel):
 
     def _on_pomo_toggle(self):
         if not self._apply_pomodoro_cfg():
-            messagebox.showwarning("番茄钟", "参数格式不正确。", parent=self)
+            messagebox.showwarning(t("番茄钟"), t("参数格式不正确。"), parent=self)
             return
         if self._scheduler.pomodoro_phase() == "idle":
             self._scheduler.start_pomodoro()
@@ -74,39 +75,39 @@ class ReminderDialog(tk.Toplevel):
 
     def refresh_status(self):
         running = self._scheduler.pomodoro_phase() != "idle"
-        self._pomo_btn.configure(text="停止" if running else "开始")
+        self._pomo_btn.configure(text=t("停止") if running else t("开始"))
         rem = self._scheduler.pomodoro_remaining()
         self._pomo_status.configure(text=("%s %s %s" % rem) if rem else "")
 
     # ---- 列表 ----
     def _build_list(self):
-        frame = ttk.LabelFrame(self, text="提醒列表")
+        frame = ttk.LabelFrame(self, text=t("提醒列表"))
         frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
         self._tree = ttk.Treeview(frame, columns=("type", "label", "when"), show="headings", height=6)
-        self._tree.heading("type", text="类型")
-        self._tree.heading("label", text="内容")
-        self._tree.heading("when", text="时间")
+        self._tree.heading("type", text=t("类型"))
+        self._tree.heading("label", text=t("内容"))
+        self._tree.heading("when", text=t("时间"))
         self._tree.column("type", width=60)
         self._tree.column("label", width=140)
         self._tree.column("when", width=140)
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        ttk.Button(frame, text="删除选中", command=self._on_delete).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(frame, text=t("删除选中"), command=self._on_delete).pack(side=tk.RIGHT, padx=4)
 
     def refresh_list(self):
         for item in self._tree.get_children():
             self._tree.delete(item)
         oneshot, daily = self._scheduler.list_reminders()
         for e in oneshot:
-            self._tree.insert("", tk.END, iid=e["id"], values=("一次性", e["label"], e["when"].replace("T", " ")))
+            self._tree.insert("", tk.END, iid=e["id"], values=(t("一次性"), e["label"], e["when"].replace("T", " ")))
         for e in daily:
-            self._tree.insert("", tk.END, iid=e["id"], values=("每日", e["label"], "每天 %02d:%02d" % (e["hour"], e["minute"])))
+            self._tree.insert("", tk.END, iid=e["id"], values=(t("每日"), e["label"], t("每天 %02d:%02d") % (e["hour"], e["minute"])))
         self.refresh_status()
 
     def _on_delete(self):
         sel = self._tree.selection()
         if not sel:
             return
-        if not messagebox.askyesno("删除提醒", "确认删除选中项？", parent=self):
+        if not messagebox.askyesno(t("删除提醒"), t("确认删除选中项？"), parent=self):
             return
         for rid in sel:
             self._scheduler.remove(rid)
@@ -115,59 +116,59 @@ class ReminderDialog(tk.Toplevel):
 
     # ---- 新增 ----
     def _build_add(self):
-        frame = ttk.LabelFrame(self, text="新增提醒（每日忽略日期）")
+        frame = ttk.LabelFrame(self, text=t("新增提醒（每日忽略日期）"))
         frame.pack(fill=tk.X, padx=6, pady=4)
-        ttk.Label(frame, text="内容").pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame, text=t("内容")).pack(side=tk.LEFT, padx=2)
         self._label_var = tk.StringVar()
         ttk.Entry(frame, textvariable=self._label_var, width=12).pack(side=tk.LEFT)
         self._type_var = tk.StringVar(value="daily")
-        ttk.Radiobutton(frame, text="每日", value="daily", variable=self._type_var).pack(side=tk.LEFT, padx=4)
-        ttk.Radiobutton(frame, text="一次性", value="oneshot", variable=self._type_var).pack(side=tk.LEFT, padx=4)
+        ttk.Radiobutton(frame, text=t("每日"), value="daily", variable=self._type_var).pack(side=tk.LEFT, padx=4)
+        ttk.Radiobutton(frame, text=t("一次性"), value="oneshot", variable=self._type_var).pack(side=tk.LEFT, padx=4)
         now = datetime.now()
         self._date_var = tk.StringVar(value=now.strftime("%Y-%m-%d"))
-        ttk.Label(frame, text="日期").pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame, text=t("日期")).pack(side=tk.LEFT, padx=2)
         ttk.Entry(frame, textvariable=self._date_var, width=10).pack(side=tk.LEFT)
         self._hour_var = tk.IntVar(value=now.hour)
         self._minute_var = tk.IntVar(value=now.minute)
-        ttk.Label(frame, text="时").pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame, text=t("时")).pack(side=tk.LEFT, padx=2)
         ttk.Spinbox(frame, from_=0, to=23, width=3, textvariable=self._hour_var).pack(side=tk.LEFT)
-        ttk.Label(frame, text="分").pack(side=tk.LEFT, padx=2)
+        ttk.Label(frame, text=t("分")).pack(side=tk.LEFT, padx=2)
         ttk.Spinbox(frame, from_=0, to=59, width=3, textvariable=self._minute_var).pack(side=tk.LEFT)
-        ttk.Button(frame, text="添加", command=self._on_add).pack(side=tk.LEFT, padx=6)
+        ttk.Button(frame, text=t("添加"), command=self._on_add).pack(side=tk.LEFT, padx=6)
 
     def _on_add(self):
         label = self._label_var.get().strip()
         if not label:
-            messagebox.showwarning("新增提醒", "请填写内容。", parent=self)
+            messagebox.showwarning(t("新增提醒"), t("请填写内容。"), parent=self)
             return
         try:
             hour = self._hour_var.get()
             minute = self._minute_var.get()
         except tk.TclError:
-            messagebox.showwarning("新增提醒", "时间格式不正确。", parent=self)
+            messagebox.showwarning(t("新增提醒"), t("时间格式不正确。"), parent=self)
             return
         if not _valid_hhmm(hour, minute):
-            messagebox.showwarning("新增提醒", "时间超出范围（时 0–23，分 0–59）。", parent=self)
+            messagebox.showwarning(t("新增提醒"), t("时间超出范围（时 0–23，分 0–59）。"), parent=self)
             return
         if self._type_var.get() == "daily":
             try:
                 self._scheduler.add_daily(label, hour, minute)
             except ValueError as exc:
-                messagebox.showwarning("新增提醒", str(exc), parent=self)
+                messagebox.showwarning(t("新增提醒"), str(exc), parent=self)
                 return
         else:
             try:
                 when = datetime.strptime("%s %02d:%02d" % (self._date_var.get().strip(), hour, minute), "%Y-%m-%d %H:%M")
             except ValueError:
-                messagebox.showwarning("新增提醒", "日期格式应为 YYYY-MM-DD。", parent=self)
+                messagebox.showwarning(t("新增提醒"), t("日期格式应为 YYYY-MM-DD。"), parent=self)
                 return
             if when <= datetime.now():
-                messagebox.showwarning("新增提醒", "时间必须晚于当前。", parent=self)
+                messagebox.showwarning(t("新增提醒"), t("时间必须晚于当前。"), parent=self)
                 return
             try:
                 self._scheduler.add_oneshot(label, when)
             except ValueError as exc:
-                messagebox.showwarning("新增提醒", str(exc), parent=self)
+                messagebox.showwarning(t("新增提醒"), str(exc), parent=self)
                 return
         self._label_var.set("")
         self.refresh_list()
@@ -175,19 +176,19 @@ class ReminderDialog(tk.Toplevel):
 
     # ---- 提示音 ----
     def _build_sound(self):
-        frame = ttk.LabelFrame(self, text="提示音")
+        frame = ttk.LabelFrame(self, text=t("提示音"))
         frame.pack(fill=tk.X, padx=6, pady=4)
         self._sound_mode_var = tk.StringVar(value=self._sound_cfg.get("mode", "system"))
-        ttk.Radiobutton(frame, text="系统提示音", value="system", variable=self._sound_mode_var, command=self._on_sound_change).pack(side=tk.LEFT, padx=4)
-        ttk.Radiobutton(frame, text="自定义音频", value="custom", variable=self._sound_mode_var, command=self._on_sound_change).pack(side=tk.LEFT, padx=4)
+        ttk.Radiobutton(frame, text=t("系统提示音"), value="system", variable=self._sound_mode_var, command=self._on_sound_change).pack(side=tk.LEFT, padx=4)
+        ttk.Radiobutton(frame, text=t("自定义音频"), value="custom", variable=self._sound_mode_var, command=self._on_sound_change).pack(side=tk.LEFT, padx=4)
         self._sound_path_var = tk.StringVar(value=self._sound_cfg.get("path", ""))
         ttk.Entry(frame, textvariable=self._sound_path_var, width=24).pack(side=tk.LEFT, padx=4)
-        ttk.Button(frame, text="浏览...", width=6, command=self._on_browse).pack(side=tk.LEFT)
-        ttk.Button(frame, text="试听", width=4, command=self._on_preview).pack(side=tk.LEFT, padx=4)
+        ttk.Button(frame, text=t("浏览..."), width=6, command=self._on_browse).pack(side=tk.LEFT)
+        ttk.Button(frame, text=t("试听"), width=4, command=self._on_preview).pack(side=tk.LEFT, padx=4)
 
     def _on_browse(self):
         path = filedialog.askopenfilename(
-            title="选择音频文件", filetypes=[("Wave 音频", "*.wav"), ("所有文件", "*.*")], parent=self
+            title=t("选择音频文件"), filetypes=[(t("Wave 音频"), "*.wav"), (t("所有文件"), "*.*")], parent=self
         )
         if path:
             self._sound_path_var.set(path)
@@ -195,7 +196,7 @@ class ReminderDialog(tk.Toplevel):
             self._on_sound_change()
 
     def _on_preview(self):
-        notify.notify(self, "试听", "提示音试听", self.sound_config())
+        notify.notify(self, t("试听"), t("提示音试听"), self.sound_config())
 
     def _on_sound_change(self):
         self._sound_cfg = self.sound_config()

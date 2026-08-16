@@ -1,3 +1,4 @@
+import lang
 import reminder
 from datetime import datetime
 from reminder_dialog import ReminderDialog, _valid_hhmm
@@ -31,6 +32,21 @@ def test_valid_hhmm_ranges():
     assert _valid_hhmm(24, 0) is False
     assert _valid_hhmm(0, 60) is False
     assert _valid_hhmm(-1, 0) is False
+
+
+def test_dialog_english_in_en_mode(tk_root):
+    lang.set_language("en")
+    try:
+        sched = reminder.ReminderScheduler()
+        dlg = ReminderDialog(tk_root, sched, {"mode": "system", "path": ""}, on_change=lambda: None)
+        try:
+            assert dlg.title() == "Manage Reminders"
+            assert dlg._pomo_btn.cget("text") == "Start"
+            assert dlg._tree.heading("type")["text"] == "Type"
+        finally:
+            dlg.destroy()
+    finally:
+        lang.set_language("zh")
 
 
 def test_dialog_lists_and_deletes(tk_root):
