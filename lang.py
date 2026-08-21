@@ -114,6 +114,20 @@ EN_TRANSLATIONS = {
     "每日提醒": "Daily Reminder",
     # ---- main.py ----
     "未检测到 Pillow，图片粘贴/缩放功能将不可用。": "Pillow not detected. Image paste/resize will be unavailable.",
+    # ---- 待办面板 ----
+    "笔记": "Notes",
+    "待办": "Todos",
+    "状态": "Status",
+    "（🍅×%d）": "(🍅×%d)",
+    "开始专注": "Start Focus",
+    "停止专注": "Stop Focus",
+    "设为当前任务": "Set as Current Task",
+    "取消当前任务": "Clear Current Task",
+    "切换完成": "Toggle Done",
+    "上移": "Move Up",
+    "下移": "Move Down",
+    "删除": "Delete",
+    "请输入任务内容。": "Please enter a task description.",
 }
 
 _lang = None  # None = 尚未确定（首次 get_language() 惰性检测）
