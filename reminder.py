@@ -88,6 +88,7 @@ class ReminderScheduler:
         self._phase = PHASE_IDLE
         self._round = 0
         self._phase_end = None
+        self._pomo_task = None
         self._last_tick = None
 
     # ---- 持久化 ----
@@ -157,16 +158,23 @@ class ReminderScheduler:
         return [dict(e) for e in self._oneshot], [dict(e) for e in self._daily]
 
     # ---- 番茄钟 ----
-    def start_pomodoro(self, now=None):
+    def start_pomodoro(self, now=None, task=None):
         now = now or self._now_fn()
         self._phase = PHASE_WORK
         self._round = 1
+        self._pomo_task = task
         self._phase_end = now + timedelta(minutes=self._pomodoro["work_min"])
 
     def stop_pomodoro(self):
         self._phase = PHASE_IDLE
         self._round = 0
+        self._pomo_task = None
         self._phase_end = None
+
+    def set_pomodoro_task(self, task):
+        """运行中更新通知文案里的任务名；idle 时忽略。"""
+        if self._phase != PHASE_IDLE:
+            self._pomo_task = task
 
     def pomodoro_phase(self):
         return self._phase
@@ -204,16 +212,34 @@ class ReminderScheduler:
         if self._phase == PHASE_IDLE or self._phase_end is None:
             return []
         last_msg = None
-        # 追赶合并：静默推进到当前应有阶段，仅保留最后一条消息
+        work_completed = 0
+        # 追赶合并：静默推进到当前应有阶段，仅保留最后一条消息；工作完成数累计不丢
         while self._phase != PHASE_IDLE and self._phase_end is not None and now >= self._phase_end:
             if self._phase == PHASE_WORK:
+                work_completed += 1
+                task = self._pomo_task
                 if self._round >= self._pomodoro["rounds"]:
-                    last_msg = (t("番茄钟完成"), t("已完成全部 %d 轮，休息一下吧。") % self._pomodoro["rounds"])
+                    if task:
+                        last_msg = (
+                            t("番茄钟完成"),
+                            t("已完成全部 %d 轮（%s），休息一下吧。") % (self._pomodoro["rounds"], task),
+                        )
+                    else:
+                        last_msg = (t("番茄钟完成"), t("已完成全部 %d 轮，休息一下吧。") % self._pomodoro["rounds"])
                     self._phase = PHASE_IDLE
                     self._round = 0
                     self._phase_end = None
                     break
-                last_msg = (t("工作结束"), t("第 %d 轮工作结束，休息 %d 分钟。") % (self._round, self._pomodoro["break_min"]))
+                if task:
+                    last_msg = (
+                        t("工作结束"),
+                        t("第 %d 轮工作结束（%s），休息 %d 分钟。") % (self._round, task, self._pomodoro["break_min"]),
+                    )
+                else:
+                    last_msg = (
+                        t("工作结束"),
+                        t("第 %d 轮工作结束，休息 %d 分钟。") % (self._round, self._pomodoro["break_min"]),
+                    )
                 self._phase = PHASE_BREAK
                 self._phase_end = self._phase_end + timedelta(minutes=self._pomodoro["break_min"])
             else:  # PHASE_BREAK
@@ -223,7 +249,8 @@ class ReminderScheduler:
                 self._phase_end = self._phase_end + timedelta(minutes=self._pomodoro["work_min"])
         if last_msg is None:
             return []
-        return [{"kind": "pomodoro", "title": last_msg[0], "message": last_msg[1]}]
+        return [{"kind": "pomodoro", "title": last_msg[0], "message": last_msg[1],
+                 "work_completed": work_completed}]
 
     def _tick_oneshot(self, now):
         events = []

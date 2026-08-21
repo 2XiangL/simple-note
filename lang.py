@@ -109,6 +109,8 @@ EN_TRANSLATIONS = {
     "第 %d 轮工作结束，休息 %d 分钟。": "Round %d work finished. Break for %d minutes.",
     "休息结束": "Break finished",
     "开始第 %d 轮工作（%d 分钟）。": "Starting round %d work (%d minutes).",
+    "第 %d 轮工作结束（%s），休息 %d 分钟。": "Round %d work finished (%s). Break for %d minutes.",
+    "已完成全部 %d 轮（%s），休息一下吧。": "All %d rounds done (%s). Take a break!",
     "每日提醒": "Daily Reminder",
     # ---- main.py ----
     "未检测到 Pillow，图片粘贴/缩放功能将不可用。": "Pillow not detected. Image paste/resize will be unavailable.",

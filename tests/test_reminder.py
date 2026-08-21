@@ -413,3 +413,75 @@ def test_tick_events_english(monkeypatch):
         assert "Round 1" in ev[0]["message"]
     finally:
         lang.set_language("zh")
+
+
+def test_pomodoro_task_name_in_messages():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 2})
+    s.start_pomodoro(t0, task="写周报")
+    ev = s.tick(t0 + timedelta(minutes=25))   # 第1轮工作结束
+    assert ev[0]["message"] == "第 1 轮工作结束（写周报），休息 5 分钟。"
+    assert ev[0]["work_completed"] == 1
+    ev = s.tick(t0 + timedelta(minutes=30))   # 休息结束 -> 第2轮工作
+    assert ev[0]["work_completed"] == 0       # 休息结束不计数
+    ev = s.tick(t0 + timedelta(minutes=55))   # 第2轮收官
+    assert ev[0]["title"] == "番茄钟完成"
+    assert ev[0]["message"] == "已完成全部 2 轮（写周报），休息一下吧。"
+    assert ev[0]["work_completed"] == 1       # 最终轮收官也计 1
+
+
+def test_pomodoro_without_task_keeps_plain_messages():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 2})
+    s.start_pomodoro(t0)
+    ev = s.tick(t0 + timedelta(minutes=25))
+    assert ev[0]["message"] == "第 1 轮工作结束，休息 5 分钟。"
+    assert ev[0]["work_completed"] == 1
+
+
+def test_pomodoro_catchup_accumulates_work_completed():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 4})
+    s.start_pomodoro(t0, task="学习")
+    ev = s.tick(t0 + timedelta(minutes=200))  # 追赶跨全部阶段
+    assert len(ev) == 1
+    assert ev[0]["work_completed"] == 4       # 4 轮工作全部计入
+
+
+def test_set_pomodoro_task_ignored_when_idle():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    s = ReminderScheduler()
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 1})
+    s.set_pomodoro_task("不应生效")            # idle 忽略
+    s.start_pomodoro(t0)
+    ev = s.tick(t0 + timedelta(minutes=25))
+    assert ev[0]["message"] == "已完成全部 1 轮，休息一下吧。"
+
+
+def test_stop_pomodoro_clears_task():
+    s = ReminderScheduler()
+    s.start_pomodoro(datetime(2026, 8, 2, 9, 0), task="学习")
+    s.stop_pomodoro()
+    s.set_pomodoro_task("不应生效")            # stop 后 idle，忽略
+    t1 = datetime(2026, 8, 2, 10, 0)
+    s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 1})
+    s.start_pomodoro(t1)
+    ev = s.tick(t1 + timedelta(minutes=25))
+    assert "不应生效" not in ev[0]["message"]
+    assert ev[0]["message"] == "已完成全部 1 轮，休息一下吧。"
+
+
+def test_pomodoro_task_message_english():
+    t0 = datetime(2026, 8, 2, 9, 0)
+    lang.set_language("en")
+    try:
+        s = ReminderScheduler()
+        s.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 1})
+        s.start_pomodoro(t0, task="Report")
+        ev = s.tick(t0 + timedelta(minutes=25))
+        assert ev[0]["message"] == "All 1 rounds done (Report). Take a break!"
+    finally:
+        lang.set_language("zh")
