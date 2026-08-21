@@ -150,3 +150,34 @@ def test_save_load_roundtrip_with_new_keys(tmp_path):
     data["reminders"] = {"oneshot": [], "daily": [{"id": "d1", "label": "喝水", "hour": 8, "minute": 0}]}
     settings.save_settings(data, p)
     assert settings.load_settings(p) == data
+
+
+def test_default_settings_includes_todos():
+    d = settings.default_settings()
+    assert d["todos"] == dict(settings.DEFAULT_TODOS)
+    assert d["todos"] == {"items": [], "current": None}
+
+
+def test_default_settings_todos_inner_list_not_shared():
+    # default_settings 每次调用须返回全新内层 list，防跨调用串改
+    d1 = settings.default_settings()
+    d1["todos"]["items"].append("x")
+    assert settings.default_settings()["todos"] == {"items": [], "current": None}
+
+
+def test_load_settings_preserves_todos(tmp_path):
+    p = tmp_path / "settings.json"
+    p.write_text(
+        '{"version": 1, "todos": {"items": [{"id": "a", "text": "写周报", "done": false, "pomo": 2}], "current": "a"}}',
+        encoding="utf-8",
+    )
+    d = settings.load_settings(p)
+    assert d["todos"]["items"][0]["text"] == "写周报"
+    assert d["todos"]["current"] == "a"
+
+
+def test_load_settings_wrong_type_todos_falls_back(tmp_path):
+    p = tmp_path / "settings.json"
+    p.write_text('{"version": 1, "todos": "junk"}', encoding="utf-8")
+    d = settings.load_settings(p)
+    assert d["todos"] == {"items": [], "current": None}

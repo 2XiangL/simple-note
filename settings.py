@@ -17,6 +17,7 @@ PRESET_ORDER = ["紧凑", "标准", "宽松"]
 
 DEFAULT_SOUND = {"mode": "system", "path": ""}
 DEFAULT_REMINDERS = {"oneshot": [], "daily": []}
+DEFAULT_TODOS = {"items": [], "current": None}
 
 
 def default_settings():
@@ -27,6 +28,7 @@ def default_settings():
         "sound": dict(DEFAULT_SOUND),
         "pomodoro": dict(DEFAULT_POMODORO),
         "reminders": dict(DEFAULT_REMINDERS),
+        "todos": {**DEFAULT_TODOS, "items": []},
     }
 
 
@@ -59,7 +61,7 @@ def load_settings(path=None):
         level = raw.get("line_spacing")
         if level in LINE_SPACING_PRESETS:
             data["line_spacing"] = level
-        for key in ("sound", "pomodoro", "reminders"):
+        for key in ("sound", "pomodoro", "reminders", "todos"):
             val = raw.get(key)
             if isinstance(val, dict):
                 data[key] = val
