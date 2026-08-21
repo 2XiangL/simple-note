@@ -37,6 +37,32 @@ def format_events(events):
     return t("提醒"), "\n".join(lines)
 
 
+DEFAULT_REPEAT_MS = 2000
+
+
+class RepeatBell:
+    """弹框未关闭期间的持续鸣叫：root.after 自续链，stop() 取消下一声。主线程专用。"""
+
+    def __init__(self, root, sound_cfg, interval_ms):
+        self._root = root
+        self._sound_cfg = sound_cfg
+        self._interval_ms = interval_ms
+        self._job = None
+
+    def start(self):
+        if self._interval_ms and self._interval_ms > 0:
+            self._job = self._root.after(self._interval_ms, self._beep)
+
+    def _beep(self):
+        _play_sound(self._sound_cfg, self._root)
+        self._job = self._root.after(self._interval_ms, self._beep)
+
+    def stop(self):
+        if self._job is not None:
+            self._root.after_cancel(self._job)
+            self._job = None
+
+
 def _play_sound(sound_cfg, root):
     kind, path = resolve_sound(sound_cfg)
     try:
@@ -55,8 +81,12 @@ def _play_sound(sound_cfg, root):
         pass
 
 
-def notify(root, title, message, sound_cfg=None):
-    """唤回主窗口、播放提示音、弹模态框。任何失败都不阻断弹框。"""
+def notify(root, title, message, sound_cfg=None, repeat_ms=DEFAULT_REPEAT_MS):
+    """唤回主窗口、播放提示音、弹模态框。任何失败都不阻断弹框。
+
+    弹框未关闭期间按 repeat_ms 持续鸣叫（模态消息框的事件循环仍派发 after 定时器），
+    用户关闭后立即取消；repeat_ms <= 0 表示只鸣叫一次。
+    """
     try:
         root.deiconify()
         root.lift()
@@ -64,4 +94,9 @@ def notify(root, title, message, sound_cfg=None):
     except Exception:
         pass
     _play_sound(sound_cfg, root)
-    messagebox.showinfo(title, message)
+    beeper = RepeatBell(root, sound_cfg, repeat_ms)
+    beeper.start()
+    try:
+        messagebox.showinfo(title, message)
+    finally:
+        beeper.stop()
