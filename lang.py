@@ -128,6 +128,7 @@ EN_TRANSLATIONS = {
     "下移": "Move Down",
     "删除": "Delete",
     "请输入任务内容。": "Please enter a task description.",
+    "请先在右键菜单中设为当前任务。": "Right-click a task to set it as the current task first.",
 }
 
 _lang = None  # None = 尚未确定（首次 get_language() 惰性检测）

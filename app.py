@@ -10,6 +10,7 @@ from tkinter import filedialog, messagebox, ttk
 import snote
 import settings
 import notify
+import todo
 from editor import RichTextEditor
 from reminder import ReminderScheduler
 from reminder_dialog import ReminderDialog
@@ -18,6 +19,7 @@ import singleinstance
 from notes_panel import NotesPanel
 from toolbar import FormatToolbar
 from search_dialog import SearchDialog
+from todo_panel import TodoPanel
 from lang import t
 
 
@@ -63,6 +65,8 @@ class NoteApp:
         self._reminder_dlg = None
         self._search_dlg = None
         self.scheduler.arm(datetime.now())
+        self.todos = todo.TodoStore()
+        self.todos.load_dict(self.settings.get("todos"))
 
         self._build_menu()
         self.toolbar = FormatToolbar(root)
@@ -70,14 +74,26 @@ class NoteApp:
         self.body = tk.PanedWindow(root, orient=tk.HORIZONTAL)
         self.body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
+        self.sidebar = ttk.Notebook(self.body)
         self.panel = NotesPanel(
-            self.body,
+            self.sidebar,
             on_switch=self.switch_to,
             on_save=lambda d: self.save(d),
             on_save_as=lambda d: self.save_as(d),
             on_close=lambda d: self.close_doc(d),
         )
-        self.body.add(self.panel, minsize=150, width=180)
+        self.sidebar.add(self.panel, text=t("笔记"))
+        self.todo_panel = TodoPanel(
+            self.sidebar,
+            on_add=self._todo_add,
+            on_toggle=self._todo_toggle,
+            on_remove=self._todo_remove,
+            on_move=self._todo_move,
+            on_set_current=self._todo_set_current,
+            on_toggle_focus=self._todo_toggle_focus,
+        )
+        self.sidebar.add(self.todo_panel, text=t("待办"))
+        self.body.add(self.sidebar, minsize=150, width=180)
 
         self.editor_host = tk.Frame(self.body)
         self.body.add(self.editor_host, minsize=300)
@@ -162,6 +178,11 @@ class NoteApp:
             # 番茄钟 phase 与每日提醒触发不序列化，无需写盘。
             if any(ev["kind"] == "oneshot" for ev in events):
                 self._persist()
+            pomo_ev = next((ev for ev in events if ev["kind"] == "pomodoro"), None)
+            if pomo_ev is not None and pomo_ev.get("work_completed", 0) > 0:
+                if self.todos.add_pomo(pomo_ev["work_completed"]) is not None:
+                    self._persist()
+                self._todo_refresh()
             self._refresh_title(now)
             if self._reminder_dlg is not None and self._reminder_dlg.winfo_exists():
                 if events:
@@ -184,6 +205,7 @@ class NoteApp:
         pomodoro, reminders = self.scheduler.to_dict()
         self.settings["pomodoro"] = pomodoro
         self.settings["reminders"] = reminders
+        self.settings["todos"] = self.todos.to_dict()
         if self._reminder_dlg is not None and self._reminder_dlg.winfo_exists():
             self._sound_cfg = self._reminder_dlg.sound_config()
         self.settings["sound"] = self._sound_cfg
@@ -216,10 +238,73 @@ class NoteApp:
             return
         self.scheduler.start_pomodoro(datetime.now())
         self._refresh_title()
+        self._todo_refresh()
 
     def _stop_pomodoro(self):
         self.scheduler.stop_pomodoro()
         self._refresh_title()
+        self._todo_refresh()
+
+    # ---- 待办 ----
+    def _todo_refresh(self):
+        self.todo_panel.set_items(
+            self.todos.list_items(),
+            self.todos.current_id(),
+            self.scheduler.pomodoro_phase() != "idle",
+        )
+
+    def _todo_changed(self):
+        self._persist()
+        self._todo_refresh()
+
+    def _on_current_changed(self):
+        tid = self.todos.current_id()
+        label = None
+        if tid is not None:
+            for e in self.todos.list_items():
+                if e["id"] == tid:
+                    label = e["text"]
+                    break
+        self.scheduler.set_pomodoro_task(label)
+
+    def _todo_add(self, text):
+        self.todos.add(text)
+        self._todo_changed()
+
+    def _todo_toggle(self, tid):
+        self.todos.toggle(tid)
+        self._on_current_changed()
+        self._todo_changed()
+
+    def _todo_remove(self, tid):
+        self.todos.remove(tid)
+        self._on_current_changed()
+        self._todo_changed()
+
+    def _todo_move(self, tid, delta):
+        self.todos.move(tid, delta)
+        self._todo_changed()
+
+    def _todo_set_current(self, tid):
+        if tid is None:
+            self.todos.clear_current()
+        else:
+            self.todos.set_current(tid)
+        self._on_current_changed()
+        self._todo_changed()
+
+    def _todo_toggle_focus(self):
+        if self.scheduler.pomodoro_phase() == "idle":
+            tid = self.todos.current_id()
+            if tid is None:
+                messagebox.showinfo(t("待办"), t("请先在右键菜单中设为当前任务。"))
+                return
+            label = next(e["text"] for e in self.todos.list_items() if e["id"] == tid)
+            self.scheduler.start_pomodoro(datetime.now(), task=label)
+        else:
+            self.scheduler.stop_pomodoro()
+        self._refresh_title()
+        self._todo_refresh()
 
     # ---- 文档生命周期 ----
     def _make_doc(self, path=None, title=None, document=None, blobs=None):

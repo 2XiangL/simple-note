@@ -218,12 +218,17 @@ def test_app_start_pomodoro_noop_when_running():
 
 
 def test_app_start_pomodoro_idle_starts():
+    from types import SimpleNamespace
+
+    import todo
     from app import NoteApp
 
     app = NoteApp.__new__(NoteApp)
     sched = reminder.ReminderScheduler()
     app.scheduler, app.root = sched, _FakeRoot()
     app._title_cache = None
+    app.todos = todo.TodoStore()
+    app.todo_panel = SimpleNamespace(set_items=lambda *a, **k: None)
     app._start_pomodoro()
     assert sched.pomodoro_phase() == reminder.PHASE_WORK
 

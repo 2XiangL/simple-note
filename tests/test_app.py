@@ -1,11 +1,16 @@
 import os
 import sys
+from datetime import datetime, timedelta
+from tkinter import ttk
 from types import SimpleNamespace
 
 import pytest
 
 import lang
+import reminder
 import settings
+import todo
+from app import NoteApp
 
 
 class _FakeDoc:
@@ -496,3 +501,141 @@ def test_menus_and_title_english_in_en_mode(tk_root, monkeypatch):
             app._real_quit()
     finally:
         lang.set_language(saved)
+
+
+def test_noteapp_builds_notebook_tabs_and_loads_todos(tk_root, monkeypatch):
+    import app as appmod
+    import settings as settingsmod
+    from todo_panel import TodoPanel
+
+    class _FakeTray:
+        def __init__(self, root, on_quit, on_hide):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def enqueue(self, fn):
+            pass
+
+        def show(self):
+            pass
+
+        def hide(self):
+            pass
+
+        def is_running(self):
+            return True
+
+    data = settingsmod.default_settings()
+    data["todos"] = {"items": [{"id": "a", "text": "写周报", "done": False, "pomo": 0}], "current": "a"}
+    monkeypatch.setattr(appmod.settings, "load_settings", lambda *a, **k: data)
+    monkeypatch.setattr(appmod.settings, "save_settings", lambda *a, **k: None)
+    monkeypatch.setattr(appmod, "TrayController", _FakeTray)
+    app = appmod.NoteApp(tk_root)
+    try:
+        assert isinstance(app.sidebar, ttk.Notebook)
+        assert list(app.sidebar.tabs()) == [str(app.panel), str(app.todo_panel)]
+        assert isinstance(app.todo_panel, TodoPanel)
+        assert app.todos.current_id() == "a"
+    finally:
+        app._real_quit()
+
+
+def test_tick_adds_pomo_to_current_todo_and_persists(monkeypatch):
+    import app as appmod
+
+    t0 = datetime(2026, 8, 22, 9, 0)
+
+    class _FixedDT(datetime):
+        @classmethod
+        def now(cls):
+            return t0 + timedelta(minutes=25)
+
+    sched = reminder.ReminderScheduler()
+    sched.update_pomodoro({"work_min": 25, "break_min": 5, "rounds": 4})
+    sched.start_pomodoro(t0, task="写周报")
+    todos = todo.TodoStore()
+    todos.add("写周报")
+    todos.set_current(todos.list_items()[0]["id"])
+    persisted = []
+    refreshed = []
+    app = NoteApp.__new__(NoteApp)
+    app.scheduler = sched
+    app.todos = todos
+    app.todo_panel = SimpleNamespace(set_items=lambda *a, **k: refreshed.append(a))
+    app._reminder_dlg = None
+    app._sound_cfg = {"mode": "system", "path": ""}
+    app._title_cache = None
+    app.settings = {"todos": todos.to_dict()}
+    app.root = SimpleNamespace(after=lambda ms, fn: None, title=lambda s: None)
+    monkeypatch.setattr(appmod, "datetime", _FixedDT)
+    monkeypatch.setattr(appmod.notify, "notify", lambda *a, **k: None)
+    monkeypatch.setattr(appmod.settings, "save_settings", lambda *a, **k: persisted.append(1))
+    app._tick()
+    assert todos.list_items()[0]["pomo"] == 1   # 计数回写
+    assert persisted                             # 同步持久化
+    assert refreshed                             # 面板刷新
+
+
+def test_todo_set_current_updates_scheduler_task():
+    t0 = datetime(2026, 8, 22, 9, 0)
+    app = NoteApp.__new__(NoteApp)
+    app.scheduler = reminder.ReminderScheduler()
+    app.todos = todo.TodoStore()
+    a = app.todos.add("写周报")
+    app.todo_panel = SimpleNamespace(set_items=lambda *a, **k: None)
+    app._persist = lambda: None
+    app.scheduler.start_pomodoro(t0)
+    app._todo_set_current(a["id"])
+    assert app.scheduler._pomo_task == "写周报"
+    app._todo_set_current(None)
+    assert app.scheduler._pomo_task is None
+
+
+def test_todo_toggle_focus_starts_with_task_and_stops():
+    app = NoteApp.__new__(NoteApp)
+    app.scheduler = reminder.ReminderScheduler()
+    app.todos = todo.TodoStore()
+    a = app.todos.add("写周报")
+    app.todos.set_current(a["id"])
+    app.todo_panel = SimpleNamespace(set_items=lambda *a, **k: None)
+    app._title_cache = None
+    app.root = SimpleNamespace(title=lambda s: None)
+    app._todo_toggle_focus()
+    assert app.scheduler.pomodoro_phase() == "work"
+    app._todo_toggle_focus()
+    assert app.scheduler.pomodoro_phase() == "idle"
+
+
+def test_todo_toggle_focus_without_current_prompts(monkeypatch):
+    shown = []
+    monkeypatch.setattr("app.messagebox.showinfo", lambda *a, **k: shown.append(a))
+    app = NoteApp.__new__(NoteApp)
+    app.scheduler = reminder.ReminderScheduler()
+    app.todos = todo.TodoStore()
+    app.todo_panel = SimpleNamespace(set_items=lambda *a, **k: None)
+    app._title_cache = None
+    app.root = SimpleNamespace(title=lambda s: None)
+    app._todo_toggle_focus()
+    assert shown
+    assert app.scheduler.pomodoro_phase() == "idle"
+
+
+def test_todo_remove_current_while_running_keeps_pomodoro():
+    t0 = datetime(2026, 8, 22, 9, 0)
+    app = NoteApp.__new__(NoteApp)
+    app.scheduler = reminder.ReminderScheduler()
+    app.scheduler.start_pomodoro(t0, task="写周报")
+    app.todos = todo.TodoStore()
+    a = app.todos.add("写周报")
+    app.todos.set_current(a["id"])
+    app.todo_panel = SimpleNamespace(set_items=lambda *a, **k: None)
+    app._persist = lambda: None
+    app._todo_remove(a["id"])
+    assert app.scheduler.pomodoro_phase() == "work"   # 不中断
+    assert app.scheduler._pomo_task is None           # 文案回落
+    assert app.todos.current_id() is None
